@@ -1,0 +1,153 @@
+:root {
+  --bg: #0e1116;
+  --bg-panel: #161b22;
+  --bg-panel-2: #1c2430;
+  --border: #2a3340;
+  --text: #d6dde6;
+  --text-dim: #8a97a6;
+  --accent: #5aa9ff;
+  --accent-2: #8b5cf6;
+  --good: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+button:hover:not(:disabled) {
+  background: #28323f;
+  border-color: #3a4656;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06121f;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: #76b9ff;
+}
+button.danger {
+  border-color: #5a2a2a;
+}
+button.danger:hover:not(:disabled) {
+  background: #3a1f1f;
+}
+
+input,
+select {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 6px;
+}
+input[type="range"] {
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+a {
+  color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3340;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.panel-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.dim {
+  color: var(--text-dim);
+}
+.mono {
+  font-family: var(--mono);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+}
+
+/* Generic labeled bar used for needs / traits / opinions */
+.bar {
+  position: relative;
+  height: 7px;
+  border-radius: 4px;
+  background: #0a0e13;
+  overflow: hidden;
+}
+.bar > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+}

@@ -1,0 +1,167 @@
+import type { AgentSpec } from "../agents/Agent";
+
+// The eight founding villagers. Trait/skill numbers are deliberately lopsided so
+// each one has a recognizable behavioral signature once the rule engine and
+// nightly reflections start interacting. These are starting points — memories,
+// relationships and reflections will pull them in unexpected directions.
+
+export const defaultAgentSpecs: AgentSpec[] = [
+  {
+    id: "a_mara",
+    name: "Mara",
+    gender: "female",
+    age: 31,
+    persona:
+      "Mara the Caregiver. She cannot stand to watch others suffer and instinctively tends the sick and hungry, sometimes to her own detriment.",
+    traits: {
+      empathy: 92,
+      cooperation: 85,
+      honesty: 78,
+      forgiveness: 80,
+      aggression: 12,
+      patience: 80,
+      fairness: 75,
+      anxiety: 45,
+    },
+    skills: { medicine: 70, farming: 40, teaching: 50, negotiation: 45 },
+    inventory: { food: 5, medicine: 3, water: 4 },
+  },
+  {
+    id: "a_brak",
+    name: "Brak",
+    gender: "male",
+    age: 29,
+    persona:
+      "Brak the Survivor. Hardened and pragmatic, he will trade or share when it suits him but will steal or fight without hesitation when desperate.",
+    traits: {
+      aggression: 82,
+      riskTolerance: 85,
+      resourcefulness: 80,
+      courage: 78,
+      empathy: 28,
+      greed: 60,
+      impulsiveness: 65,
+      intimidation: 72,
+      emotionalStability: 45,
+    },
+    skills: { hunting: 75, combat: 70, scouting: 55, building: 30 },
+    inventory: { food: 6, wood: 2 },
+  },
+  {
+    id: "a_theo",
+    name: "Theo",
+    gender: "male",
+    age: 34,
+    persona:
+      "Theo the Builder. Methodical and steadfast, he believes a roof and a wall solve most of life's problems and quietly works to make the village permanent.",
+    traits: {
+      industriousness: 88,
+      discipline: 85,
+      steadfastness: 88,
+      patience: 75,
+      aggression: 25,
+      cooperation: 65,
+      creativity: 55,
+      conformity: 60,
+    },
+    skills: { building: 80, crafting: 65, farming: 35, scouting: 30 },
+    inventory: { wood: 8, stone: 4 },
+  },
+  {
+    id: "a_lina",
+    name: "Lina",
+    gender: "female",
+    age: 27,
+    persona:
+      "Lina the Diplomat. Warm and silver-tongued, she would rather talk two angry people down than see anyone bleed, and she remembers every favor and slight.",
+    traits: {
+      charisma: 90,
+      honesty: 80,
+      empathy: 75,
+      cooperation: 82,
+      fairness: 80,
+      manipulativeness: 30,
+      courage: 60,
+      leadership: 65,
+    },
+    skills: { negotiation: 80, leadership: 60, teaching: 55, medicine: 30 },
+    inventory: { food: 4, water: 4, luxury: 1 },
+  },
+  {
+    id: "a_orin",
+    name: "Orin",
+    gender: "male",
+    age: 38,
+    persona:
+      "Orin the Hoarder. Sharp, calculating and quietly acquisitive, he measures security in stockpiles and is slow to give anything away without advantage.",
+    traits: {
+      greed: 88,
+      intelligence: 82,
+      manipulativeness: 78,
+      empathy: 22,
+      ambition: 70,
+      honesty: 35,
+      patience: 68,
+      pride: 65,
+    },
+    skills: { negotiation: 60, crafting: 50, farming: 45, scouting: 35 },
+    inventory: { food: 12, water: 8, wood: 6, stone: 5, tools: 2 },
+  },
+  {
+    id: "a_juno",
+    name: "Juno",
+    gender: "female",
+    age: 24,
+    persona:
+      "Juno the Explorer. Restless and curious, she is happiest wandering the edges of the map looking for something nobody else has found yet.",
+    traits: {
+      curiosity: 90,
+      riskTolerance: 80,
+      adaptability: 82,
+      courage: 70,
+      industriousness: 55,
+      impulsiveness: 60,
+    },
+    skills: { scouting: 78, hunting: 50, farming: 30 },
+    inventory: { food: 5, water: 5 },
+  },
+  {
+    id: "a_sera",
+    name: "Sera",
+    gender: "female",
+    age: 33,
+    persona:
+      "Sera the Farmer. Patient and rooted, she dreams of full granaries and dislikes conflict, preferring to coax life out of the soil.",
+    traits: {
+      patience: 88,
+      industriousness: 80,
+      empathy: 60,
+      aggression: 18,
+      discipline: 75,
+      cooperation: 70,
+      steadfastness: 72,
+    },
+    skills: { farming: 82, building: 35, medicine: 30, teaching: 40 },
+    inventory: { food: 10, water: 5 },
+  },
+  {
+    id: "a_vale",
+    name: "Vale",
+    gender: "nonbinary",
+    age: 41,
+    persona:
+      "Vale the Mystic. Charismatic and strange, Vale speaks of patterns others cannot see and tends to gather curious listeners into something like a following.",
+    traits: {
+      charisma: 85,
+      creativity: 88,
+      steadfastness: 82,
+      wisdom: 70,
+      conformity: 25,
+      leadership: 68,
+      curiosity: 75,
+      ambition: 60,
+    },
+    skills: { teaching: 70, leadership: 55, negotiation: 50, medicine: 35 },
+    inventory: { luxury: 2, food: 3, water: 3 },
+  },
+];

@@ -1,0 +1,80 @@
+import type { LLMConfig, ReproductionRules, SimulationConfig } from "../types";
+
+export const defaultLLMConfig: LLMConfig = {
+  enabled: true,
+  provider: "ollama",
+  baseUrl: "http://localhost:11434",
+  model: "qwen3:4b",
+
+  reflectionMode: "major_events_only",
+  maxAgentsPerBatch: 8,
+  reflectEveryNDays: 3,
+
+  useCloudForMajorEvents: false,
+  localModel: "qwen3:4b",
+  cloudModel: "claude-sonnet-4-6",
+  apiKey: "",
+
+  temperature: 0.7,
+  maxTokens: 800,
+  timeoutMs: 30000,
+};
+
+export const defaultReproductionRules: ReproductionRules = {
+  requiredParticipants: 2,
+  requiredGenders: undefined,
+  allowSameGender: true,
+  allowAsexual: false,
+  minimumAge: 18,
+  maximumAge: 120,
+  requiresShelter: false,
+  requiresFoodSurplus: true,
+  childCreationCost: { food: 8, water: 6, energy: 25 },
+  cooldownDays: 6,
+};
+
+export const defaultConfig: SimulationConfig = {
+  worldWidth: 32,
+  worldHeight: 24,
+  startingAgentCount: 8,
+  maxAgents: 60,
+
+  startingFood: 220,
+  startingWater: 220,
+  startingWood: 140,
+  startingStone: 90,
+  startingMedicine: 30,
+
+  resourceScarcity: 0.5,
+  resourceRegenerationRate: 1,
+
+  hungerRate: 12,
+  thirstRate: 16,
+  hygieneDecayRate: 8,
+  energyDecayRate: 14,
+  socialDecayRate: 9,
+
+  reproductionEnabled: true,
+  reproductionRules: defaultReproductionRules,
+
+  conflictEnabled: true,
+  violenceEnabled: true,
+  diplomacyEnabled: true,
+  tradingEnabled: true,
+  stealingEnabled: true,
+
+  diseaseEnabled: false,
+  weatherEnabled: false,
+  disastersEnabled: false,
+
+  llm: defaultLLMConfig,
+
+  mutationRate: 0.25,
+  childInheritanceStrength: 0.7,
+
+  ticksPerDay: 24,
+};
+
+export function cloneConfig(c: SimulationConfig): SimulationConfig {
+  return JSON.parse(JSON.stringify(c)) as SimulationConfig;
+}
