@@ -23,6 +23,7 @@ const LS_KEY = "agenttown.llmconfig.v1";
 // Non-reactive engine state held outside the store to avoid re-render churn.
 let rng = new Rng(12345);
 let loopTimer: ReturnType<typeof setTimeout> | null = null;
+let ticking = false; // re-entrancy guard: at most one sim tick body at a time
 let providers: { local: LLMProvider; cloud: LLMProvider | null } = {
   local: createProvider(defaultConfig.llm),
   cloud: null,
@@ -115,27 +116,33 @@ export const useStore = create<StoreState>((set, get) => {
 
   function scheduleLoop(): void {
     if (loopTimer) clearTimeout(loopTimer);
-    const { running, speed } = get();
-    if (!running) return;
-    const interval = Math.max(15, Math.floor(1000 / speed));
-    const batch = speed > 60 ? Math.ceil(speed / 60) : 1;
-    loopTimer = setTimeout(async () => {
-      const st = get();
-      if (!st.running) return;
-      const world = st.world;
-      for (let i = 0; i < batch; i++) {
-        const res = stepTick(world, rng);
-        if (res.newDay && res.prepared.length && reflectionsEnabled()) {
-          // Pause the sim: show the dawn state, then run reflections to completion
-          // (streaming each into the log) BEFORE any further ticks.
-          set({ tick: get().tick + 1, metrics: computeMetrics(world) });
-          await runReflectionsBlocking(res.prepared);
-          break;
-        }
-      }
+    if (!get().running) return;
+    const interval = Math.max(15, Math.floor(1000 / get().speed));
+    loopTimer = setTimeout(runLoopBody, interval);
+  }
+
+  /**
+   * One tick of the sim. A single `ticking` guard guarantees only ONE body ever
+   * runs at a time — so the sim never advances during a reflection pause and we
+   * never spawn concurrent reflection batches, no matter how many timers fire
+   * (speed changes, re-mounts, etc.).
+   */
+  async function runLoopBody(): Promise<void> {
+    if (ticking) return; // a previous body (or its reflection await) is still in flight
+    ticking = true;
+    try {
+      if (!get().running) return;
+      const world = get().world;
+      const res = stepTick(world, rng);
       set({ tick: get().tick + 1, metrics: computeMetrics(world) });
+      if (res.newDay && res.prepared.length && reflectionsEnabled()) {
+        // Pause: run reflections to completion (streaming each in) before next tick.
+        await runReflectionsBlocking(res.prepared);
+      }
+    } finally {
+      ticking = false;
       if (get().running) scheduleLoop();
-    }, interval);
+    }
   }
 
   function reflectionsEnabled(): boolean {
@@ -149,6 +156,7 @@ export const useStore = create<StoreState>((set, get) => {
    */
   async function runReflectionsBlocking(prepared: PreparedReflection[]): Promise<void> {
     if (prepared.length === 0 || !reflectionsEnabled()) return;
+    if (get().llmStatus.reflecting) return; // never run two batches concurrently
     set((s) => ({
       llmStatus: { ...s.llmStatus, reflecting: true, progress: { done: 0, total: prepared.length } },
     }));

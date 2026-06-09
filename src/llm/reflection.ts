@@ -292,6 +292,8 @@ export async function runPreparedReflections(
   for (const p of prepared) {
     const agent = world.agents[p.agentId];
     if (!agent || !agent.alive) continue;
+    // An agent reflects at most once per day — guards against any duplicate batch.
+    if (agent.lastReflectionDay === world.day) continue;
 
     const useCloud = config.useCloudForMajorEvents && cloudProvider != null && p.wasMajor;
     const provider = useCloud ? cloudProvider! : localProvider;
