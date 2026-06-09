@@ -9,6 +9,7 @@ export function SimulationControls() {
   const speed = useStore((s) => s.speed);
   const preset = useStore((s) => s.preset);
   const reflecting = useStore((s) => s.llmStatus.reflecting);
+  const progress = useStore((s) => s.llmStatus.progress);
   // Subscribe to tick so day/time refresh.
   const tick = useStore((s) => s.tick);
   const world = useStore.getState().world;
@@ -79,7 +80,8 @@ export function SimulationControls() {
         <span className="tag">{useStore.getState().metrics.population} alive</span>
         {reflecting && (
           <span className="tag" style={{ borderColor: "var(--accent-2)", color: "var(--accent-2)" }}>
-            🧠 reflecting…
+            🧠 reflecting {progress ? `${progress.done}/${progress.total}` : "…"}
+            {progress?.lastName ? ` · ${progress.lastName}` : ""} — sim paused
           </span>
         )}
       </div>

@@ -8,6 +8,7 @@ const FILTERS: { label: string; types: WorldEvent["type"][] | null }[] = [
   { label: "All", types: null },
   { label: "Drama", types: ["attack", "theft", "betrayal", "death", "birth", "rescue"] },
   { label: "Social", types: ["share", "trade", "alliance", "group_formed", "message", "heal"] },
+  { label: "Minds", types: ["reflection"] },
 ];
 
 export function EventLog() {
@@ -50,7 +51,9 @@ export function EventLog() {
             <span className="mono dim" style={{ marginRight: 6 }}>
               D{e.day}
             </span>
-            <span style={{ color: SEVERITY_COLOR[e.severity] }}>{e.text}</span>
+            <span style={{ color: e.type === "reflection" ? "#b9a7e0" : SEVERITY_COLOR[e.severity] }}>
+              {e.text}
+            </span>
           </div>
         ))}
       </div>

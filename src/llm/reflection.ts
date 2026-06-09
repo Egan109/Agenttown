@@ -266,17 +266,28 @@ export function prepareReflections(world: WorldState, agentIds: string[]): Prepa
  * responsive. On any provider error we apply the deterministic fallback so an
  * agent's mind always gets updated.
  */
+export type ReflectionProgress = {
+  done: number;
+  total: number;
+  agentName: string;
+  summary: string;
+  fellBack: boolean;
+};
+
 export async function runPreparedReflections(
   world: WorldState,
   prepared: PreparedReflection[],
   localProvider: LLMProvider,
   cloudProvider: LLMProvider | null,
   config: LLMConfig,
-  onWarn?: (msg: string) => void
+  onWarn?: (msg: string) => void,
+  /** Fired after each agent's reflection is applied, so the UI can stream them in. */
+  onProgress?: (p: ReflectionProgress) => void
 ): Promise<ReflectionRunResult> {
   let reflected = 0;
   let fellBack = 0;
   let usedCloud = 0;
+  const total = prepared.length;
 
   for (const p of prepared) {
     const agent = world.agents[p.agentId];
@@ -286,12 +297,14 @@ export async function runPreparedReflections(
     const provider = useCloud ? cloudProvider! : localProvider;
 
     let output: NightlyReflectionOutput;
+    let didFallback = false;
     try {
       output = await provider.generateReflection(p.input);
       if (useCloud) usedCloud++;
     } catch (e) {
       output = deterministicReflection(p.input);
       fellBack++;
+      didFallback = true;
       onWarn?.(`${agent.name}: reflection fell back to deterministic (${(e as Error).message}).`);
     }
 
@@ -299,19 +312,18 @@ export async function runPreparedReflections(
     agent.lastReflectionDay = world.day;
     agent.pendingMajorEvent = false;
     reflected++;
-  }
 
-  if (reflected > 0) {
+    // Stream each reflection into the world log so the player can watch them land.
+    const summary = output.reflectionSummary || output.currentStrategy || "reconsidered things";
     logEvent(
       world,
       "reflection",
-      `Nightly reflection: ${reflected} villager(s) reconsidered their lives` +
-        (fellBack > 0 ? ` (${fellBack} via fallback)` : ``) +
-        (usedCloud > 0 ? `, ${usedCloud} via cloud` : ``) +
-        `.`,
-      [],
-      0
+      `🧠 ${agent.name}: ${summary}${didFallback ? " (offline)" : ""}`,
+      [agent.id],
+      1
     );
+    onProgress?.({ done: reflected, total, agentName: agent.name, summary, fellBack: didFallback });
   }
+
   return { reflected, fellBack, usedCloud };
 }

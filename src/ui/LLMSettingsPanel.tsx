@@ -164,13 +164,27 @@ export function LLMSettingsPanel() {
           <input
             type="number"
             min={128}
-            max={4000}
+            max={6000}
             step={64}
             value={cfg.maxTokens}
             onChange={(e) => update({ maxTokens: Number(e.target.value) })}
           />
         </Field>
       </div>
+
+      {cfg.provider === "ollama" && (
+        <div className="row" style={{ gap: 6, marginTop: 4 }}>
+          <button
+            onClick={() => update({ think: !cfg.think })}
+            style={{ borderColor: cfg.think ? "var(--warn)" : undefined, color: cfg.think ? "var(--warn)" : undefined }}
+          >
+            {cfg.think ? "✓ " : "✕ "}Thinking mode (qwen3)
+          </button>
+          <span className="dim" style={{ fontSize: 10, flex: 1 }}>
+            Off is recommended: faster & reliable JSON for reflection. If on, set Max tokens ≥ 2500.
+          </span>
+        </div>
+      )}
 
       <div className="dim" style={{ fontSize: 10, marginTop: 6 }}>
         If the local model is unreachable, agents fall back to deterministic reflection and the sim keeps running.

@@ -17,23 +17,27 @@ Rules:
 - Make small changes most days; make large changes only after major events.
 - Preserve existing goals and beliefs unless today's events justify changing them.
 - Different agents interpret the same event differently based on personality.
-- Return ONLY valid JSON in the exact shape requested. No prose, no markdown.`;
+- Every number is 0-100 and must reflect THIS agent's actual state tonight. Compute each value from the persona, needs and events. Never output all zeros and never copy the example numbers below verbatim.
+- Return ONLY valid JSON with the keys shown below. No prose, no markdown.`;
 
+// IMPORTANT: the numbers here are an EXAMPLE of the FORMAT, deliberately varied
+// (not all-zero) and explicitly labelled, so small models replace them with real
+// values instead of parroting the template. Keep the keys; do not show "0"s here.
 const JSON_SHAPE = `{
   "dailyPriorities": {
-    "food": 0, "water": 0, "shelter": 0, "safety": 0, "hygiene": 0, "rest": 0,
-    "social": 0, "reproduction": 0, "cooperation": 0, "trade": 0,
-    "exploration": 0, "building": 0, "revenge": 0, "leadership": 0
+    "food": 60, "water": 55, "shelter": 40, "safety": 50, "hygiene": 20, "rest": 35,
+    "social": 30, "reproduction": 10, "cooperation": 45, "trade": 20,
+    "exploration": 25, "building": 30, "revenge": 5, "leadership": 15
   },
   "relationshipUpdates": [
-    { "agentId": "string", "trustDelta": 0, "affectionDelta": 0, "fearDelta": 0, "respectDelta": 0, "resentmentDelta": 0, "attractionDelta": 0, "note": "string" }
+    { "agentId": "use a real id from the relationships list above", "trustDelta": 0, "affectionDelta": 0, "fearDelta": 0, "respectDelta": 0, "resentmentDelta": 0, "attractionDelta": 0, "note": "why your feeling changed" }
   ],
-  "newBeliefs": [ { "statement": "string", "confidence": 0, "emotionalWeight": 0 } ],
-  "updatedGoals": [ { "description": "string", "priority": 0, "status": "active" } ],
-  "emotionalState": { "happiness": 0, "anger": 0, "fear": 0, "loneliness": 0, "hope": 0, "shame": 0, "grief": 0 },
-  "currentStrategy": "string",
-  "privateThoughts": ["string"],
-  "reflectionSummary": "string"
+  "newBeliefs": [ { "statement": "a belief in the agent's voice", "confidence": 70, "emotionalWeight": 40 } ],
+  "updatedGoals": [ { "description": "a goal in the agent's voice", "priority": 60, "status": "active" } ],
+  "emotionalState": { "happiness": 50, "anger": 15, "fear": 20, "loneliness": 25, "hope": 50, "shame": 5, "grief": 0 },
+  "currentStrategy": "a specific sentence in the agent's voice about tomorrow",
+  "privateThoughts": ["a specific private thought"],
+  "reflectionSummary": "a specific one-sentence summary of today"
 }`;
 
 function topTraits(traits: Record<string, number>, n: number): string {
@@ -116,7 +120,7 @@ World situation: population ${w.population}, food scarcity ${w.foodScarcity.toFi
 Task: Decide how ${a.name} feels tonight and what they will prioritize tomorrow.
 Use agentId values exactly as they appear in the relationships above when giving relationshipUpdates.
 
-Return ONLY JSON in this exact shape:
+Return ONLY a JSON object with exactly these keys. The numbers below are an EXAMPLE of the format — replace EVERY value with your own judgement based on ${a.name}'s persona, needs and today's events. Do not copy the example values.
 ${JSON_SHAPE}`;
 }
 

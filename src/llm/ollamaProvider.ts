@@ -17,6 +17,10 @@ const ollamaChat: ChatFn = async (messages: ChatMessage[], config: LLMConfig) =>
         messages,
         stream: false,
         format: "json", // constrain output to JSON where the model supports it
+        keep_alive: "30m", // keep the model resident in VRAM so reflections stay ~2-3s
+        // Hybrid models (qwen3) reason in a separate channel; with thinking on
+        // they can spend the whole budget thinking and emit no JSON. Default off.
+        think: config.think ?? false,
         options: {
           temperature: config.temperature,
           num_predict: config.maxTokens,

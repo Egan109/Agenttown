@@ -62,6 +62,8 @@ function makeInitialConfig(): SimulationConfig {
 
 export type LLMStatus = {
   reflecting: boolean;
+  /** Live progress while a reflection batch runs (sim is paused during this). */
+  progress?: { done: number; total: number; lastName?: string };
   lastTest?: { ok: boolean; detail: string };
   warnings: string[];
 };
@@ -117,37 +119,65 @@ export const useStore = create<StoreState>((set, get) => {
     if (!running) return;
     const interval = Math.max(15, Math.floor(1000 / speed));
     const batch = speed > 60 ? Math.ceil(speed / 60) : 1;
-    loopTimer = setTimeout(() => {
+    loopTimer = setTimeout(async () => {
       const st = get();
       if (!st.running) return;
       const world = st.world;
       for (let i = 0; i < batch; i++) {
         const res = stepTick(world, rng);
-        if (res.newDay && res.prepared.length) launchReflections(res.prepared);
+        if (res.newDay && res.prepared.length && reflectionsEnabled()) {
+          // Pause the sim: show the dawn state, then run reflections to completion
+          // (streaming each into the log) BEFORE any further ticks.
+          set({ tick: get().tick + 1, metrics: computeMetrics(world) });
+          await runReflectionsBlocking(res.prepared);
+          break;
+        }
       }
       set({ tick: get().tick + 1, metrics: computeMetrics(world) });
-      scheduleLoop();
+      if (get().running) scheduleLoop();
     }, interval);
   }
 
-  function launchReflections(prepared: PreparedReflection[]): void {
-    const st = get();
-    if (st.llmStatus.reflecting) return; // drop overlap rather than pile up
-    if (!st.world.config.llm.enabled || st.world.config.llm.reflectionMode === "no_llm") return;
-    set({ llmStatus: { ...st.llmStatus, reflecting: true } });
-    runPreparedReflections(
-      st.world,
-      prepared,
-      providers.local,
-      providers.cloud,
-      st.world.config.llm,
-      (msg) => get().pushWarning(msg)
-    )
-      .then(() => set((s) => ({ llmStatus: { ...s.llmStatus, reflecting: false }, tick: s.tick + 1 })))
-      .catch((e) => {
-        get().pushWarning(`Reflection batch failed: ${(e as Error).message}`);
-        set((s) => ({ llmStatus: { ...s.llmStatus, reflecting: false } }));
-      });
+  function reflectionsEnabled(): boolean {
+    const llm = get().world.config.llm;
+    return llm.enabled && llm.reflectionMode !== "no_llm";
+  }
+
+  /**
+   * Run a reflection batch to completion while the sim is paused, streaming each
+   * agent's reflection into the world log (and a progress chip) as it lands.
+   */
+  async function runReflectionsBlocking(prepared: PreparedReflection[]): Promise<void> {
+    if (prepared.length === 0 || !reflectionsEnabled()) return;
+    set((s) => ({
+      llmStatus: { ...s.llmStatus, reflecting: true, progress: { done: 0, total: prepared.length } },
+    }));
+    try {
+      await runPreparedReflections(
+        get().world,
+        prepared,
+        providers.local,
+        providers.cloud,
+        get().world.config.llm,
+        (msg) => get().pushWarning(msg),
+        (p) =>
+          set((s) => ({
+            llmStatus: {
+              ...s.llmStatus,
+              progress: { done: p.done, total: p.total, lastName: p.agentName },
+            },
+            tick: s.tick + 1, // re-render so the new reflection shows immediately
+            metrics: computeMetrics(get().world),
+          })),
+      );
+    } catch (e) {
+      get().pushWarning(`Reflection batch failed: ${(e as Error).message}`);
+    }
+    set((s) => ({
+      llmStatus: { ...s.llmStatus, reflecting: false, progress: undefined },
+      tick: s.tick + 1,
+      metrics: computeMetrics(get().world),
+    }));
   }
 
   return {
@@ -176,8 +206,9 @@ export const useStore = create<StoreState>((set, get) => {
     stepOnce: () => {
       const world = get().world;
       const res = stepTick(world, rng);
-      if (res.newDay && res.prepared.length) launchReflections(res.prepared);
       set({ tick: get().tick + 1, metrics: computeMetrics(world) });
+      // Stream reflections in (don't block the manual stepper's call).
+      if (res.newDay && res.prepared.length) void runReflectionsBlocking(res.prepared);
     },
 
     reset: (randomizeSeed = false) => {

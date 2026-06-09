@@ -15,6 +15,8 @@ export const defaultLLMConfig: LLMConfig = {
   cloudModel: "claude-sonnet-4-6",
   apiKey: "",
 
+  think: false,
+
   temperature: 0.7,
   maxTokens: 800,
   timeoutMs: 30000,
@@ -72,7 +74,10 @@ export const defaultConfig: SimulationConfig = {
   mutationRate: 0.25,
   childInheritanceStrength: 0.7,
 
-  ticksPerDay: 24,
+  // Longer days = more gameplay between dawns, so the (sim-pausing) nightly
+  // reflections interrupt less often. Need-decay rates are per-day, so day length
+  // is balance-neutral; it only changes how much you watch between reflections.
+  ticksPerDay: 60,
 };
 
 export function cloneConfig(c: SimulationConfig): SimulationConfig {

@@ -439,6 +439,14 @@ export type LLMConfig = {
   /** API key for openai/anthropic providers; stored only in memory/localStorage. */
   apiKey?: string;
 
+  /**
+   * Enable a thinking/reasoning pass for hybrid models (e.g. qwen3) on Ollama.
+   * Off by default: for this short structured-reflection task a single pass is
+   * faster and just as in-character, and thinking can exhaust the token budget
+   * before emitting JSON. If you turn this on, raise maxTokens well above 1500.
+   */
+  think?: boolean;
+
   temperature: number;
   maxTokens: number;
   timeoutMs: number;

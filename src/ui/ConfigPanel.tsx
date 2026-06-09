@@ -123,6 +123,9 @@ export function ConfigPanel() {
       <Field label="Regen rate">
         <Num k="resourceRegenerationRate" min={0.1} max={3} step={0.1} />
       </Field>
+      <Field label="Day length (ticks)">
+        <Num k="ticksPerDay" min={12} max={180} step={6} />
+      </Field>
 
       <div className="dim" style={{ fontSize: 10, margin: "8px 0 2px" }}>
         NEED DECAY (per day)
