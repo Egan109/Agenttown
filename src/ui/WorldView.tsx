@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../state/store";
 import { lightLevel } from "../simulation/dayNightCycle";
-import type { EmotionalState, TerrainType, WorldState } from "../types";
+import type { AgentAction, EmotionalState, Shelter, TerrainType, WorldState } from "../types";
 
 const TERRAIN_COLORS: Record<TerrainType, string> = {
   grass: "#2c3a26",
@@ -22,6 +22,33 @@ const RESOURCE_COLORS: Record<string, string> = {
   tools: "#d8c84a",
   luxury: "#c77dff",
   water: "#5ab0ff",
+};
+
+// A small emoji per action so the map reads as a living scene at a glance.
+const ACTION_GLYPH: Partial<Record<AgentAction, string>> = {
+  gather_food: "🌾",
+  gather_water: "💧",
+  gather_wood: "🪵",
+  gather_stone: "🪨",
+  build_shelter: "🔨",
+  rest: "💤",
+  clean_self: "🧼",
+  talk: "💬",
+  trade: "🤝",
+  share_resource: "🎁",
+  steal: "🥷",
+  attack: "⚔️",
+  flee: "🏃",
+  heal: "➕",
+  teach: "📚",
+  craft_tool: "🛠️",
+  reproduce: "❤️",
+  form_group: "👥",
+  join_group: "👥",
+  leave_group: "🚪",
+  propose_law: "📜",
+  explore: "🧭",
+  // move / idle: intentionally no glyph (avoids clutter for the common case)
 };
 
 export function WorldView() {
@@ -118,20 +145,19 @@ function drawWorld(
       ctx.fillRect(sx, sy, cell - 1, cell - 1);
 
       if (t.resource && t.resource.amount > 0 && cell > 4) {
-        const r = Math.max(1.5, cell * 0.16);
-        ctx.fillStyle = RESOURCE_COLORS[t.resource.type] ?? "#fff";
+        // Radius (not just alpha) tracks the remaining amount, so a tile visibly
+        // shrinks as it's gathered and pops back after the daily regen.
         const a = Math.min(1, t.resource.amount / 30);
-        ctx.globalAlpha = 0.4 + a * 0.6;
+        const r = Math.max(1.2, cell * (0.09 + 0.18 * a));
+        ctx.fillStyle = RESOURCE_COLORS[t.resource.type] ?? "#fff";
+        ctx.globalAlpha = 0.35 + a * 0.6;
         ctx.beginPath();
         ctx.arc(sx + cell * 0.5, sy + cell * 0.5, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
-      if (t.shelterId && cell > 5) {
-        const sh = world.shelters[t.shelterId];
-        ctx.strokeStyle = sh && sh.progress >= 100 ? "#d8c84a" : "#8a7a3a";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(sx + 1, sy + 1, cell - 3, cell - 3);
+      if (t.shelterId && cell > 4) {
+        drawShelter(ctx, world.shelters[t.shelterId], sx, sy, cell);
       }
     }
   }
@@ -190,6 +216,17 @@ function drawWorld(
       ctx.fillStyle = id === selectedId ? "#ffffff" : "#dfe6ee";
       ctx.fillText(a.name, cx, ty);
     }
+
+    // Current-action glyph below the head, so the player can read what each
+    // villager is doing right now (gathering, building, fighting, resting…).
+    const glyph = ACTION_GLYPH[a.currentAction ?? "idle"];
+    if (glyph && cell >= 10) {
+      const fs = Math.max(9, Math.min(15, Math.floor(cell * 0.6)));
+      ctx.font = `${fs}px -apple-system, "Segoe UI Emoji", "Segoe UI", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(glyph, cx, cy + r + fs * 0.65);
+    }
   }
 
   // Day/night tint.
@@ -197,6 +234,50 @@ function drawWorld(
   if (light < 1) {
     ctx.fillStyle = `rgba(8, 10, 30, ${(1 - light) * 0.45})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+/** Draw a shelter tile: a translucent base, a build-progress bar while under
+ *  construction, and a roof glyph once finished — so raising a shelter is
+ *  obvious on the map. */
+function drawShelter(
+  ctx: CanvasRenderingContext2D,
+  sh: Shelter | undefined,
+  sx: number,
+  sy: number,
+  cell: number
+): void {
+  const built = !!sh && sh.progress >= 100;
+  const accent = built ? "#d8c84a" : "#8a7a3a";
+
+  // Translucent footprint.
+  ctx.fillStyle = built ? "rgba(216,200,74,0.20)" : "rgba(138,122,58,0.14)";
+  ctx.fillRect(sx, sy, cell - 1, cell - 1);
+
+  // Border (dashed while building).
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = built ? 1.8 : 1;
+  if (!built) ctx.setLineDash([2, 2]);
+  ctx.strokeRect(sx + 1, sy + 1, cell - 3, cell - 3);
+  ctx.setLineDash([]);
+
+  if (built && cell > 8) {
+    // Little roof triangle as a finished marker.
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.moveTo(sx + cell * 0.5, sy + cell * 0.18);
+    ctx.lineTo(sx + cell * 0.8, sy + cell * 0.46);
+    ctx.lineTo(sx + cell * 0.2, sy + cell * 0.46);
+    ctx.closePath();
+    ctx.fill();
+  } else if (!built && sh && cell > 6) {
+    // Build-progress bar across the bottom of the tile.
+    const p = Math.max(0, Math.min(1, sh.progress / 100));
+    const bw = cell - 5;
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(sx + 2, sy + cell - 4, bw, 2);
+    ctx.fillStyle = accent;
+    ctx.fillRect(sx + 2, sy + cell - 4, bw * p, 2);
   }
 }
 

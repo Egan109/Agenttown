@@ -49,23 +49,31 @@ export function decayNeeds(agent: Agent, config: SimulationConfig): void {
   }
 }
 
+/** Day length the per-tick health constants below were tuned against. Effects
+ *  are scaled by 60/ticksPerDay so damage-per-DAY stays constant — i.e. changing
+ *  day length never changes how lethal hunger/exposure/etc. are. */
+const REFERENCE_TICKS_PER_DAY = 60;
+
 /**
  * Needs that are very high inflict health damage (starvation, dehydration,
  * exposure, exhaustion). Returns the damage applied so callers can log deaths.
+ * Pass ticksPerDay so the per-day damage is invariant to day length.
  */
-export function applyNeedHealthEffects(agent: Agent): number {
+export function applyNeedHealthEffects(agent: Agent, ticksPerDay: number): number {
   const n = agent.needs;
+  const k = REFERENCE_TICKS_PER_DAY / Math.max(1, ticksPerDay);
   let damage = 0;
   if (n.thirst > 90) damage += (n.thirst - 90) * 0.25;
   if (n.hunger > 90) damage += (n.hunger - 90) * 0.18;
   if (n.energy > 95) damage += (n.energy - 95) * 0.1;
   if (n.shelter > 96) damage += 0.3; // exposure
   if (n.hygiene > 95) damage += 0.2; // sickness from filth
+  damage *= k;
   if (damage > 0) {
     agent.health = clamp100(agent.health - damage);
   } else if (n.hunger < 40 && n.thirst < 40 && agent.health < 100) {
     // Gentle natural healing when fed, watered and not in crisis.
-    agent.health = clamp100(agent.health + 0.15);
+    agent.health = clamp100(agent.health + 0.15 * k);
   }
   return damage;
 }

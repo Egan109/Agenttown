@@ -36,6 +36,18 @@ const ollamaChat: ChatFn = async (messages: ChatMessage[], config: LLMConfig) =>
   return data.message?.content ?? "";
 };
 
+// JSON-constrained chat for the daily chronicle. Reuses the same format:"json"
+// path as reflections so qwen3's chain-of-thought stays suppressed.
+function ollamaJson(system: string, user: string, config: LLMConfig): Promise<string> {
+  return ollamaChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ] as ChatMessage[],
+    config
+  );
+}
+
 async function safeText(res: Response): Promise<string> {
   try {
     return (await res.text()).slice(0, 200);
@@ -48,6 +60,7 @@ export function makeOllamaProvider(config: LLMConfig): LLMProvider {
   return {
     name: "ollama",
     generateReflection: (input) => runReflectionChat(ollamaChat, input, config),
+    generateJson: (system, user) => ollamaJson(system, user, config),
   };
 }
 

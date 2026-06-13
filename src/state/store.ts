@@ -5,6 +5,8 @@ import { applyPreset } from "../config/presets";
 import { makeAnthropicProvider } from "../llm/anthropicProvider";
 import { createProvider, testConnection } from "../llm/provider";
 import { runPreparedReflections, type PreparedReflection } from "../llm/reflection";
+import { generateDaySummary, pushDailySummary, type ReflectionDigest } from "../llm/daySummary";
+import { logEvent } from "../simulation/events";
 import { computeMetrics } from "../simulation/metrics";
 import { stepTick } from "../simulation/tick";
 import { createWorld } from "../simulation/world";
@@ -161,7 +163,7 @@ export const useStore = create<StoreState>((set, get) => {
       llmStatus: { ...s.llmStatus, reflecting: true, progress: { done: 0, total: prepared.length } },
     }));
     try {
-      await runPreparedReflections(
+      const result = await runPreparedReflections(
         get().world,
         prepared,
         providers.local,
@@ -178,6 +180,8 @@ export const useStore = create<StoreState>((set, get) => {
             metrics: computeMetrics(get().world),
           })),
       );
+      // Weave the night's reflections + the day's events into a village chronicle.
+      if (result.reflected > 0) await writeDailyChronicle(result.digests);
     } catch (e) {
       get().pushWarning(`Reflection batch failed: ${(e as Error).message}`);
     }
@@ -186,6 +190,27 @@ export const useStore = create<StoreState>((set, get) => {
       tick: s.tick + 1,
       metrics: computeMetrics(get().world),
     }));
+  }
+
+  /**
+   * Build the day's chronicle from the reflections that just landed plus the
+   * day's notable events, append it to the world, and drop a line in the log.
+   */
+  async function writeDailyChronicle(digests: ReflectionDigest[]): Promise<void> {
+    const world = get().world;
+    try {
+      const summary = await generateDaySummary(
+        world,
+        digests,
+        providers.local,
+        world.config.llm
+      );
+      pushDailySummary(world, summary);
+      logEvent(world, "chronicle", `📜 Day ${summary.day}: ${summary.text}`, [], 2);
+      set((s) => ({ tick: s.tick + 1 }));
+    } catch (e) {
+      get().pushWarning(`Chronicle failed: ${(e as Error).message}`);
+    }
   }
 
   return {

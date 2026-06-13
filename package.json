@@ -9,7 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/agenttown-smoke.mjs && node node_modules/.cache/agenttown-smoke.mjs"
+    "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/agenttown-smoke.mjs && node node_modules/.cache/agenttown-smoke.mjs",
+    "reflcheck": "esbuild scripts/reflcheck.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/agenttown-reflcheck.mjs && node node_modules/.cache/agenttown-reflcheck.mjs",
+    "llmcheck": "esbuild scripts/llmcheck.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/agenttown-llmcheck.mjs && node node_modules/.cache/agenttown-llmcheck.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

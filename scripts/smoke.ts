@@ -32,6 +32,14 @@ for (let i = 0; i < totalTicks; i++) {
 const m = computeMetrics(world);
 const living = world.agentOrder.filter((id) => world.agents[id].alive).length;
 
+const finishedShelters = Object.values(world.shelters).filter((s) => s.progress >= 100).length;
+const unfinishedShelters = Object.values(world.shelters).filter((s) => s.progress < 100).length;
+const deathCauses: Record<string, number> = {};
+for (const id of world.agentOrder) {
+  const a = world.agents[id];
+  if (!a.alive && a.causeOfDeath) deathCauses[a.causeOfDeath] = (deathCauses[a.causeOfDeath] ?? 0) + 1;
+}
+
 console.log("=== AgentTown smoke test ===");
 console.log(`ran ${totalTicks} ticks over ${DAYS} days`);
 console.log(`living: ${living}  totalBirths: ${world.totalBirths}  totalDeaths: ${world.totalDeaths}`);
@@ -39,6 +47,8 @@ console.log(`events logged: ${world.events.length}`);
 console.log(`reflection inputs prepared at dawns: ${reflectionsPrepared}`);
 console.log(`metrics: pop=${m.population} avgHunger=${m.avgHunger.toFixed(1)} avgThirst=${m.avgThirst.toFixed(1)} avgTrust=${m.avgTrust.toFixed(1)} utopia=${m.utopiaScore.toFixed(0)} collapse=${m.collapseRisk.toFixed(0)}`);
 console.log("action mix:", actionCounts);
+console.log(`shelters: ${finishedShelters} finished, ${unfinishedShelters} in progress`);
+console.log("death causes:", Object.keys(deathCauses).length ? deathCauses : "(none)");
 
 // Sample a few recent dramatic events.
 const drama = world.events.filter((e) => e.severity >= 2).slice(-6).map((e) => `D${e.day}: ${e.text}`);

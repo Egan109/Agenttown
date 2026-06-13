@@ -14,6 +14,7 @@ import { clamp, clamp100, clampSigned } from "../util/math";
 import { livingAgents, resourceDensity } from "../simulation/world";
 import { logEvent } from "../simulation/events";
 import { deterministicReflection } from "./mockProvider";
+import type { ReflectionDigest } from "./daySummary";
 
 // ---------------------------------------------------------------------------
 // Building reflection input
@@ -237,6 +238,8 @@ export type ReflectionRunResult = {
   reflected: number;
   fellBack: number;
   usedCloud: number;
+  /** Per-agent reflection digests, for weaving the daily chronicle. */
+  digests: ReflectionDigest[];
 };
 
 export type PreparedReflection = {
@@ -287,6 +290,7 @@ export async function runPreparedReflections(
   let reflected = 0;
   let fellBack = 0;
   let usedCloud = 0;
+  const digests: ReflectionDigest[] = [];
   const total = prepared.length;
 
   for (const p of prepared) {
@@ -317,6 +321,7 @@ export async function runPreparedReflections(
 
     // Stream each reflection into the world log so the player can watch them land.
     const summary = output.reflectionSummary || output.currentStrategy || "reconsidered things";
+    digests.push({ name: agent.name, summary });
     logEvent(
       world,
       "reflection",
@@ -327,5 +332,5 @@ export async function runPreparedReflections(
     onProgress?.({ done: reflected, total, agentName: agent.name, summary, fellBack: didFallback });
   }
 
-  return { reflected, fellBack, usedCloud };
+  return { reflected, fellBack, usedCloud, digests };
 }

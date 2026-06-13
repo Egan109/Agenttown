@@ -46,6 +46,15 @@ export function makeOpenAICompatibleProvider(
   return {
     name,
     generateReflection: (input) => runReflectionChat(chat, input, config),
+    // JSON-constrained chronicle generation reuses the same response_format path.
+    generateJson: (system, user) =>
+      chat(
+        [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        config
+      ),
   };
 }
 

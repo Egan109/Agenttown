@@ -385,6 +385,7 @@ export type WorldEventType =
   | "heal"
   | "message"
   | "reflection"
+  | "chronicle"
   | "system";
 
 export type WorldEvent = {
@@ -407,6 +408,28 @@ export type AgentEvent = {
   text: string;
   otherAgentIds: string[];
   emotionalWeight: number;
+};
+
+/**
+ * A village-wide "chronicle" of one day: a narrative woven from the agents'
+ * reflections (their thoughts) plus the day's notable world events. Produced at
+ * the dawn after each reflection batch and shown in the Diary tab.
+ */
+export type DailySummary = {
+  /** The day being summarized (the day that just ended). */
+  day: number;
+  /** Narrative paragraph of the day's events and the villagers' moods. */
+  text: string;
+  /** A few short headline bullets (most salient happenings). */
+  headlines: string[];
+  population: number;
+  births: number;
+  deaths: number;
+  conflicts: number;
+  /** How many agents reflected into this chronicle. */
+  reflectionCount: number;
+  /** True if produced by the deterministic fallback (no live LLM). */
+  fellBack: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -522,6 +545,15 @@ export type LLMProvider = {
   generateBatchReflection?(
     input: BatchNightlyReflectionInput
   ): Promise<BatchNightlyReflectionOutput>;
+  /**
+   * Optional JSON-constrained generation, used for the village daily chronicle.
+   * Returns the raw model string (a JSON object) for the caller to parse. JSON
+   * mode is deliberate: it suppresses hybrid models' (qwen3) chain-of-thought,
+   * which would otherwise leak into free-form prose. Providers that don't
+   * implement it fall back to a deterministic narrative. Config is captured at
+   * provider creation.
+   */
+  generateJson?(system: string, user: string): Promise<string>;
 };
 
 export type MajorEventReflectionTriggers = {
@@ -650,6 +682,8 @@ export type WorldState = {
   events: WorldEvent[];
   /** Per-agent event feed for the current day, cleared each dawn. */
   dailyAgentEvents: Record<string, AgentEvent[]>;
+  /** Village-wide daily chronicles, newest last (capped). */
+  dailySummaries: DailySummary[];
 
   tick: number;
   day: number;

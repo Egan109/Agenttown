@@ -14,11 +14,11 @@ function Num({
   max: number;
   step?: number;
 }) {
-  const tick = useStore((s) => s.tick);
-  void tick;
-  const cfg = useStore.getState().world.config;
+  // Subscribe to the actual config value (not `tick`): structural edits reset
+  // tick to 0, which can be a no-op that skips the re-render and leaves the
+  // controlled slider stuck on a stale value.
+  const value = useStore((s) => s.world.config[k]) as number;
   const update = useStore.getState().updateConfig;
-  const value = cfg[k] as number;
   return (
     <div className="row" style={{ gap: 6 }}>
       <input
@@ -38,11 +38,8 @@ function Num({
 }
 
 function Toggle({ k, label }: { k: keyof SimulationConfig; label: string }) {
-  const tick = useStore((s) => s.tick);
-  void tick;
-  const cfg = useStore.getState().world.config;
+  const value = useStore((s) => s.world.config[k]) as boolean;
   const update = useStore.getState().updateConfig;
-  const value = cfg[k] as boolean;
   return (
     <button
       onClick={() => update({ [k]: !value } as Partial<SimulationConfig>)}
@@ -124,7 +121,7 @@ export function ConfigPanel() {
         <Num k="resourceRegenerationRate" min={0.1} max={3} step={0.1} />
       </Field>
       <Field label="Day length (ticks)">
-        <Num k="ticksPerDay" min={12} max={180} step={6} />
+        <Num k="ticksPerDay" min={12} max={480} step={6} />
       </Field>
 
       <div className="dim" style={{ fontSize: 10, margin: "8px 0 2px" }}>

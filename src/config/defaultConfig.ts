@@ -77,7 +77,9 @@ export const defaultConfig: SimulationConfig = {
   // Longer days = more gameplay between dawns, so the (sim-pausing) nightly
   // reflections interrupt less often. Need-decay rates are per-day, so day length
   // is balance-neutral; it only changes how much you watch between reflections.
-  ticksPerDay: 60,
+  // Set fairly long by default because a real local-LLM dawn can take several
+  // seconds per agent and you don't want that pause every few seconds of play.
+  ticksPerDay: 150,
 };
 
 export function cloneConfig(c: SimulationConfig): SimulationConfig {

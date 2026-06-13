@@ -1,9 +1,10 @@
 # AgentTown — Handover
 
 **Audience:** a Claude model picking this project up cold.
-**Status:** MVP complete, type-checks clean, builds, passes a headless runtime smoke test, and the
-Vite dev server boots. Not yet exercised by a human click-through in the browser.
-**Last verified:** 2026-06 on Node v24.16.0 / npm 11.13.0 (Windows 11).
+**Status:** MVP complete + **live local-LLM reflection verified** (Ollama / qwen3:4b). Type-checks
+clean, builds, passes headless smoke + cadence audits, dev server boots, and the user has confirmed
+the UI works in the browser.
+**Last verified:** 2026-06 on Node v24.16.0 / npm 11.13.0, RTX 3070, Windows 11.
 
 AgentTown is a top-down 2D village where every agent is autonomous (traits, needs, memories,
 relationships, goals). The goal is **emergent** social behavior — competition, cooperation,
@@ -22,13 +23,16 @@ npm install        # already done once; re-run if node_modules is missing
 npm run dev        # Vite dev server -> http://localhost:5173  (press ▶ Run, click a villager)
 npm run typecheck  # tsc --noEmit  (MUST stay clean — strict, noUnusedLocals/Parameters on)
 npm run build      # tsc --noEmit && vite build
-npm run smoke      # headless: drives the engine 20 sim-days, asserts invariants, prints a report
+npm run smoke      # headless: engine 20 sim-days, asserts invariants (no LLM), prints a report
+npm run reflcheck  # headless: audits reflection CADENCE over 30 days (no LLM) — see §6a
+npm run llmcheck   # headless: drives ONE real reflection through Ollama (server must be up) — see §6a
 ```
 
-**Always run `npm run typecheck` and `npm run smoke` after engine changes.** The smoke test
-([scripts/smoke.ts](scripts/smoke.ts)) is the fastest way to catch regressions: it runs the
-deterministic engine (no LLM) for 480 ticks and fails if agents stop acting, needs/health go
-non-finite, no events log, or everyone dies in 20 days. It's deterministic given the seed.
+**Always run `npm run typecheck` and `npm run smoke` after engine changes**, and `npm run reflcheck`
+after touching reflection scheduling. The smoke test ([scripts/smoke.ts](scripts/smoke.ts)) runs the
+deterministic engine for ~1200 ticks and fails if agents stop acting, needs/health go non-finite, no
+events log, or everyone dies. All checks are deterministic given the seed. The `.mjs` bundles land in
+`node_modules/.cache/` (gitignored).
 
 **Windows gotchas already resolved (don't re-debug):**
 - `npm not recognized` → Node is on PATH now; open a *new* terminal after any PATH change.
@@ -123,16 +127,23 @@ src/
     schemas.ts                Zod schemas, clamping, normalizeReflection()
     repairJson.ts             strip <think>/fences, extract first object, light repair, parse
     reflection.ts             buildReflectionInput, selectAgentsForReflection, prepare/run, apply
+    daySummary.ts             Village "chronicle": weave the night's reflections + day's events
+                              into a daily narrative (LLM via provider.generateJson, det. fallback)
 
   config/
     defaultConfig.ts          SimulationConfig + LLMConfig + ReproductionRules defaults
     defaultAgents.ts          The 8 founders (Mara/Brak/Theo/Lina/Orin/Juno/Sera/Vale)
     presets.ts                8 world presets (overrides on top of defaultConfig)
 
-  state/store.ts              Zustand: game loop (setTimeout), config/LLM wiring, async reflections
-  ui/                         WorldView (canvas+faces+names), AgentPanel, SimulationControls,
-                              EventLog, ConfigPanel, LLMSettingsPanel, MetricsPanel, widgets
-scripts/smoke.ts              Headless engine test (run via `npm run smoke`)
+  state/store.ts              Zustand: game loop (setTimeout + `ticking` guard), config/LLM wiring,
+                              SIM-PAUSING reflections (runLoopBody → runReflectionsBlocking)
+  ui/                         WorldView (canvas+emotive faces+names), AgentPanel, SimulationControls
+                              (reflect progress chip), EventLog (Events/Drama/Social/Minds filters),
+                              ConfigPanel (incl. Day length slider), LLMSettingsPanel (incl. Thinking
+                              toggle), MetricsPanel, ChronicleFeed (EventLog "Summary" tab), widgets
+scripts/smoke.ts              Headless engine smoke test          (`npm run smoke`)
+scripts/reflcheck.ts          Headless reflection-cadence audit   (`npm run reflcheck`)
+scripts/llmcheck.ts           One real reflection via live Ollama (`npm run llmcheck`)
 ```
 
 Note: the original spec listed `agents/ruleBasedAgent.ts` — that role is fully covered by
@@ -150,12 +161,30 @@ Note: the original spec listed `agents/ruleBasedAgent.ts` — that role is fully
 - **Consumption model:** agents *gather* food/water into inventory; hunger/thirst are satisfied
   **automatically** from inventory in `autoConsume`. So `gather_food` fills the larder; eating is
   implicit. (There is intentionally no `eat`/`drink` action.)
-- **Reflection timing (subtle, don't break):** at dawn, `stepTick` calls `handleDawn` which
-  **synchronously** snapshots reflection inputs (`prepareReflections`) from *yesterday's* events,
-  THEN clears the day's events/counters and regenerates resources. The store runs the snapshot
-  through the provider **asynchronously** (`runPreparedReflections`) so a slow local model never
-  blocks the sim and never reads the wrong day's events. Overlapping batches are dropped
-  (`llmStatus.reflecting` guard).
+- **Reflection timing (subtle, don't break):** at dawn, `stepTick`→`handleDawn` **synchronously**
+  snapshots reflection inputs (`prepareReflections`) from *yesterday's* events, THEN clears the
+  day's events/counters and regenerates resources (so the snapshot is a frozen view of yesterday,
+  regardless of how long the model takes).
+- **Reflections PAUSE the sim (changed from the original async design).** The store's `runLoopBody`
+  awaits `runReflectionsBlocking` before the next tick, so the world is frozen while villagers think.
+  Three guards make this airtight (don't remove any): (1) a module-level `ticking` flag — only one
+  tick body ever runs, so the sim can't advance during a reflection nor spawn a 2nd loop on a
+  speed-change/re-mount; (2) `runReflectionsBlocking` early-returns if `llmStatus.reflecting` —
+  never two batches at once; (3) `runPreparedReflections` skips any agent whose
+  `lastReflectionDay === world.day` — an agent reflects at most once per day. Each reflection is
+  streamed into the world log (purple, 🧠) as it lands, with a `llmStatus.progress` chip. (These
+  three guards fixed a real duplicate-reflection bug; `npm run reflcheck` audits the cadence.)
+- **Daily chronicle (EventLog "Summary" tab):** after each reflection batch finishes, the store
+  calls `generateDaySummary` ([src/llm/daySummary.ts](src/llm/daySummary.ts)) to weave the agents'
+  reflection summaries + the day's notable world events into one short third-person narrative,
+  appended to `world.dailySummaries` and streamed to the log as a 📜 `chronicle` event. The
+  "Summary" filter in [EventLog](src/ui/EventLog.tsx) renders these as narrator cards (`ChronicleFeed`
+  in [DailyChroniclePanel.tsx](src/ui/DailyChroniclePanel.tsx)). It uses the provider's optional
+  `generateJson` — **requested as JSON `{"chronicle","headlines"}` on purpose**: free-form prose let
+  qwen3's chain-of-thought leak into the narration, and `format:"json"` suppresses it exactly as the
+  reflection path does. The mock provider has no `generateJson`, so the no-LLM default uses the
+  deterministic narrative. Like reflections, it is read-only over world state and runs inside the
+  same sim-pause as the reflection batch.
 - **Major-event flagging:** physical systems (conflict, theft, lifecycle, reproduction, groups)
   set `agent.pendingMajorEvent = true`. `selectAgentsForReflection` prioritizes those, plus a
   periodic catch-up every `reflectEveryNDays`. Default mode `major_events_only` = both.
@@ -181,9 +210,39 @@ Balance knobs that were deliberately set (all in `decisionEngine.ts` `scoreActio
   material; `doRest` makes exposed agents path to any usable finished shelter. Exposure damage is
   mild (`needs.ts`). Without this the village always died of exposure (no one built).
 - `SHELTER_WOOD_COST = 12`, `SHELTER_STONE_COST = 4`.
+- **Sleep is a night-time stretch, not scattered naps.** Rest scoring strongly prefers night and
+  uses a hysteresis bonus (reads last tick's `currentAction`) so an agent who is already asleep
+  stays asleep until dawn; daytime resting only happens when genuinely exhausted; hunger/thirst > 75
+  or a nearby threat overrides sleep (`scoreActions` "Rest / sleep").
+- **One villager per shelter tile (`SHELTER_CAPACITY = 1`) — no piling onto one tile.**
+  `occupantIds` is now a *per-night* reservation (cleared each dawn in `tick.ts` `handleDawn`);
+  `findUsableShelter` skips occupied or too-far (`SHELTER_SEEK_RANGE = 12`) huts. When slots are
+  short village-wide (`housingShortage()` > 0) a ramped `shortBonus` (grows with the deficit, capped
+  at 55 so the hungry still eat first) pushes agents to gather wood/stone and build **their own** hut
+  — the seed reaches ~one shelter per resident (11 huts / 11 villagers), no exposure deaths. To raise
+  or lower how many sleep per hut, change `SHELTER_CAPACITY`. `scripts/smoke.ts` now reports
+  finished/in-progress shelters and a death-cause breakdown.
+
+- **Day length:** `ticksPerDay` defaults to **150** (longer so a real local-LLM dawn pause interrupts
+  far less often). Tunable live via the Config tab "Day length" slider (12–480). It is now genuinely
+  **balance-neutral**: need-decay (`needs.ts` `decayNeeds`) is per-day, and the per-tick *health*
+  effects (`applyNeedHealthEffects`) plus the per-tick *rest/shelter* deltas (`doRest`) are scaled by
+  `60/ticksPerDay`, so a night of sleep and a day of starvation/exposure do the same thing at any day
+  length. (Before this, lengthening the day silently multiplied exposure damage and wiped the village.)
+- **Build-spot seeking:** an agent carrying materials but standing on forest/rock (where it gathered)
+  now walks to the nearest open grass via `findBuildSpot` instead of re-choosing `build_shelter` and
+  spinning in place — without this, a strong build drive burns thousands of no-op build ticks.
 
 If you change scoring, re-run `npm run smoke` and watch: living count > 0 at day 20, some shelters
 built, some social events. The smoke report prints the action mix and notable events.
+
+### 6a. Headless checks (no browser needed)
+
+- `npm run smoke` — engine integrity (agents act, needs/health finite, village survives ~20 days).
+- `npm run reflcheck` — reflection **cadence**: every living agent reflects ≥ every `reflectEveryNDays`
+  (+ extra on major events), no agent starved, no same-day duplicate. Verified clean (max gap = 3).
+- `npm run llmcheck` — drives ONE real reflection through the live Ollama provider (prompt → model →
+  repair → Zod) and asserts non-templated output. **Requires the Ollama server running.**
 
 ---
 
@@ -197,13 +256,15 @@ built, some social events. The smoke report prints the action mix and notable ev
 ✅ Conflict (combat, counterattack, loot, death), reproduction (inherited traits/skills + mutation)
 ✅ Groups/factions (basic), day/night cycle, event log + per-agent feed
 ✅ Rule-based daytime decisions; metrics (collapse risk, utopia score, inequality, cooperation)
-✅ LLM reflection: providers (mock/ollama/lmstudio/openai/anthropic), Zod validation + JSON repair +
-   deterministic fallback, async non-blocking, scheduling modes, hybrid local/cloud
+✅ LLM reflection (LIVE & verified): providers (mock/ollama/lmstudio/openai/anthropic), Zod
+   validation + JSON repair + deterministic fallback, scheduling modes, hybrid local/cloud
+✅ Reflections PAUSE the sim, stream into the log live (🧠, "Minds" filter), progress chip, with
+   re-entrancy/dedup guards; qwen3 `think` flag (default off) + `keep_alive`
 ✅ UI: canvas world (emotive faces + floating names), agent inspector, controls (run/pause/step/
-   reset/seed/speed/preset), event log w/ filters, config panel (+export/import), LLM settings
-   (+test connection), metrics panel
+   reset/seed/speed/preset), event log w/ filters, config panel (+ Day length, export/import), LLM
+   settings (+ test connection, thinking toggle), metrics panel
 ✅ 8 world presets; config persistence of LLM settings to localStorage
-✅ Headless smoke test + clean typecheck + production build
+✅ Headless smoke + cadence (reflcheck) + live-LLM (llmcheck) checks; clean typecheck + build
 
 ---
 
@@ -301,6 +362,7 @@ built, some social events. The smoke report prints the action mix and notable ev
 | Map / terrain / resource spawn | `simulation/world.ts`, `simulation/resources.ts` |
 | Metrics / utopia·collapse score | `simulation/metrics.ts` |
 | LLM prompt | `llm/promptBuilder.ts` |
+| Daily chronicle / Summary tab | `llm/daySummary.ts`, `ui/DailyChroniclePanel.tsx` (`ChronicleFeed`), `ui/EventLog.tsx` |
 | LLM output schema/validation | `llm/schemas.ts`, `llm/reflection.ts` (`applyReflection`) |
 | Reflection scheduling | `llm/reflection.ts` (`selectAgentsForReflection`), `simulation/tick.ts` |
 | Game loop / config wiring | `state/store.ts` |

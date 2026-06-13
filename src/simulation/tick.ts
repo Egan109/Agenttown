@@ -40,7 +40,7 @@ export function stepTick(world: WorldState, rng: Rng): TickResult {
   // Resolve need/health damage and deaths after everyone has acted.
   for (const agent of actors) {
     if (!agent.alive) continue;
-    applyNeedHealthEffects(agent);
+    applyNeedHealthEffects(agent, world.config.ticksPerDay);
     applyFrailty(agent, world);
     if (agent.health <= 0) {
       killAgent(world, agent, deathCause(agent));
@@ -89,6 +89,8 @@ function handleDawn(world: WorldState): PreparedReflection[] {
   world.deathsToday = 0;
   world.conflictsToday = 0;
   world.dailyAgentEvents = {};
+  // Free last night's sleeping slots so shelter capacity is enforced per-night.
+  for (const id in world.shelters) world.shelters[id].occupantIds = [];
 
   return prepared;
 }

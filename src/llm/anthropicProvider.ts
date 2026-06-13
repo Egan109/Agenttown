@@ -87,5 +87,13 @@ export function makeAnthropicProvider(config: LLMConfig): LLMProvider {
   return {
     name: "anthropic",
     generateReflection: (input) => generateReflection(input, config),
+    generateJson: (system, user) =>
+      anthropicMessages(
+        [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        config
+      ),
   };
 }

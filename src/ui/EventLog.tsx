@@ -1,15 +1,21 @@
 import { useMemo, useState } from "react";
 import { useStore } from "../state/store";
 import type { WorldEvent } from "../types";
+import { ChronicleFeed } from "./DailyChroniclePanel";
 
 const SEVERITY_COLOR = ["#6b7686", "#a9b4c2", "#fbbf24", "#f87171"];
 
+// `summary` is special-cased: it renders the village chronicle (narrator output)
+// from world.dailySummaries instead of plain event lines.
 const FILTERS: { label: string; types: WorldEvent["type"][] | null }[] = [
   { label: "All", types: null },
   { label: "Drama", types: ["attack", "theft", "betrayal", "death", "birth", "rescue"] },
   { label: "Social", types: ["share", "trade", "alliance", "group_formed", "message", "heal"] },
   { label: "Minds", types: ["reflection"] },
+  { label: "Summary", types: ["chronicle"] },
 ];
+
+const SUMMARY_FILTER = FILTERS.findIndex((f) => f.label === "Summary");
 
 export function EventLog() {
   const tick = useStore((s) => s.tick);
@@ -45,13 +51,24 @@ export function EventLog() {
         </div>
       </div>
       <div style={{ overflowY: "auto", padding: "6px 10px", flex: 1, minHeight: 0 }}>
-        {shown.length === 0 && <div className="dim">No events yet. Press Run.</div>}
-        {shown.map((e) => (
+        {filter === SUMMARY_FILTER && <ChronicleFeed />}
+        {filter !== SUMMARY_FILTER && shown.length === 0 && (
+          <div className="dim">No events yet. Press Run.</div>
+        )}
+        {filter !== SUMMARY_FILTER &&
+          shown.map((e) => (
           <div key={e.id} style={{ padding: "3px 0", borderBottom: "1px solid #1b2027", fontSize: 12 }}>
             <span className="mono dim" style={{ marginRight: 6 }}>
               D{e.day}
             </span>
-            <span style={{ color: e.type === "reflection" ? "#b9a7e0" : SEVERITY_COLOR[e.severity] }}>
+            <span
+              style={{
+                color:
+                  e.type === "reflection" || e.type === "chronicle"
+                    ? "#b9a7e0"
+                    : SEVERITY_COLOR[e.severity],
+              }}
+            >
               {e.text}
             </span>
           </div>

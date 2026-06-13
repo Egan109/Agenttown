@@ -337,6 +337,7 @@ export function createWorld(
     messages: [],
     events: [],
     dailyAgentEvents: {},
+    dailySummaries: [],
     tick: 0,
     day: 1,
     timeOfDay: 0,

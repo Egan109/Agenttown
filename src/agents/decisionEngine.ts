@@ -42,6 +42,7 @@ import {
   canGatherAt,
   findNearestResourceTile,
   getTile,
+  livingAgents,
   nextId,
 } from "../simulation/world";
 
@@ -50,6 +51,11 @@ const INTERACT_RADIUS = 1; // must be adjacent to act on another agent
 const SHELTER_WOOD_COST = 12;
 const SHELTER_STONE_COST = 4;
 const INVENTORY_SOFTCAP = 30;
+/** One villager per shelter tile — everyone needs their own hut. Drives the
+ *  village to build a shelter per resident instead of sharing tiles. */
+const SHELTER_CAPACITY = 1;
+/** Don't trek across the whole map to a shelter at bedtime; sleep where you are. */
+const SHELTER_SEEK_RANGE = 12;
 
 type Perception = {
   nearby: Agent[];
@@ -186,10 +192,18 @@ function scoreActions(world: WorldState, agent: Agent, p: Perception): Scored[] 
   }
   // When an agent wants shelter, steer them to gather exactly the material they
   // still lack so a build can actually complete (otherwise they collect wood
-  // forever and never the stone).
-  const wantsShelter = n.shelter > 45 || pr.building > 45;
+  // forever and never the stone). The village also builds proactively while
+  // there aren't enough sleeping slots for everyone (housing shortage), so it
+  // grows several huts instead of cramming onto one.
+  const deficit = housingShortage(world);
+  const housingShort = deficit > 0;
+  const wantsShelter = n.shelter > 40 || pr.building > 45 || housingShort;
   const needWood = SHELTER_WOOD_COST - inventoryCount(agent.inventory, "wood");
   const needStone = SHELTER_STONE_COST - inventoryCount(agent.inventory, "stone");
+  // Too few huts is a village priority: the build bonus ramps up with how many
+  // villagers still lack one. Capped at 55 so a genuinely starving/thirsty agent
+  // (whose food/water scores climb past that) still eats first.
+  const shortBonus = housingShort ? Math.min(55, 14 + deficit * 6) : 0;
 
   if (woodTile && carry < INVENTORY_SOFTCAP * 2) {
     scores.push({
@@ -200,7 +214,7 @@ function scoreActions(world: WorldState, agent: Agent, p: Perception): Scored[] 
         t.industriousness * 0.4 +
         s.building * 0.25 +
         14 +
-        (wantsShelter && needWood > 0 ? 22 : 0) -
+        (wantsShelter && needWood > 0 ? 22 + shortBonus : 0) -
         proximityPenalty(agent.position, woodTile),
     });
   }
@@ -212,7 +226,7 @@ function scoreActions(world: WorldState, agent: Agent, p: Perception): Scored[] 
         t.industriousness * 0.3 +
         s.building * 0.2 +
         8 +
-        (wantsShelter && needStone > 0 && needWood <= 0 ? 34 : wantsShelter && needStone > 0 ? 18 : 0) -
+        (wantsShelter && needStone > 0 && needWood <= 0 ? 34 + shortBonus : wantsShelter && needStone > 0 ? 18 : 0) -
         proximityPenalty(agent.position, stoneTile),
     });
   }
@@ -231,19 +245,30 @@ function scoreActions(world: WorldState, agent: Agent, p: Perception): Scored[] 
         t.industriousness * 0.4 +
         s.building * 0.3 +
         14 +
+        shortBonus +
         (buildingInProgress ? 25 : 0),
     });
   }
 
-  // Rest --------------------------------------------------------------------
-  scores.push({
-    action: "rest",
-    score:
-      n.energy * 1.2 +
-      pr.rest +
-      (isNight(world) ? 35 : -10) -
-      (n.hunger > 70 || n.thirst > 70 ? 40 : 0),
-  });
+  // Rest / sleep ------------------------------------------------------------
+  // Sleep should be a long night-time stretch, ideally in a shelter — not
+  // scattered naps. At night resting is strongly preferred, and once an agent is
+  // already asleep a hysteresis bonus keeps them down until dawn. During the day
+  // they only nap when genuinely exhausted. A real crisis (hunger/thirst/threat)
+  // always overrides sleep so they don't doze through starvation or an attack.
+  const night = isNight(world);
+  const wasResting = agent.currentAction === "rest";
+  let restScore = pr.rest + n.energy * 0.6;
+  if (night) {
+    restScore += 60;
+    if (wasResting) restScore += 70; // stay asleep through the night
+  } else {
+    restScore += n.energy > 75 ? 8 : -45; // daytime: only nap when worn out
+    if (wasResting && n.energy > 40) restScore += 20; // finish a needed nap
+  }
+  if (n.hunger > 75 || n.thirst > 75) restScore -= 90;
+  if (p.nearestThreat || p.onDanger) restScore -= 90;
+  scores.push({ action: "rest", score: restScore });
 
   // Hygiene -----------------------------------------------------------------
   scores.push({
@@ -454,6 +479,16 @@ function pickAttackTarget(agent: Agent, p: Perception): Agent | undefined {
   return best;
 }
 
+/** Villagers minus total finished sleeping slots: >0 means the village needs
+ *  more huts (drives proactive building so they don't all cram onto one tile). */
+function housingShortage(world: WorldState): number {
+  let slots = 0;
+  for (const id in world.shelters) {
+    if (world.shelters[id].progress >= 100) slots += SHELTER_CAPACITY;
+  }
+  return livingAgents(world).length - slots;
+}
+
 function ownedUnfinishedShelter(world: WorldState, agent: Agent) {
   for (const id in world.shelters) {
     const sh = world.shelters[id];
@@ -593,19 +628,39 @@ function findAdjacentWater(world: WorldState, pos: Position) {
   return undefined;
 }
 
+/** Is this tile open ground we can raise a hut on? */
+function isBuildable(world: WorldState, x: number, y: number): boolean {
+  const t = getTile(world, x, y);
+  return !!t && t.walkable && !t.shelterId && (t.terrain === "grass" || t.terrain === "farm");
+}
+
+/** Nearest open-ground tile to build on (so an agent carrying materials while
+ *  standing on forest/rock walks to grass instead of getting stuck retrying). */
+function findBuildSpot(world: WorldState, pos: Position): Position | undefined {
+  for (let r = 0; r <= 8; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring at radius r
+        const x = pos.x + dx;
+        const y = pos.y + dy;
+        if (isBuildable(world, x, y)) return { x, y };
+      }
+    }
+  }
+  return undefined;
+}
+
 function doBuild(world: WorldState, agent: Agent): void {
   let shelter = ownedUnfinishedShelter(world, agent);
   if (!shelter) {
-    // Start a new shelter on the current tile if it's suitable open ground.
-    const tile = getTile(world, agent.position.x, agent.position.y);
-    if (
-      tile &&
-      tile.walkable &&
-      !tile.shelterId &&
-      (tile.terrain === "grass" || tile.terrain === "farm") &&
+    const hasMaterials =
       inventoryCount(agent.inventory, "wood") >= SHELTER_WOOD_COST &&
-      inventoryCount(agent.inventory, "stone") >= SHELTER_STONE_COST
-    ) {
+      inventoryCount(agent.inventory, "stone") >= SHELTER_STONE_COST;
+    if (!hasMaterials) return;
+    // Start a new shelter on the current tile if it's suitable open ground;
+    // otherwise walk to the nearest buildable spot rather than spinning in place.
+    const tile = getTile(world, agent.position.x, agent.position.y);
+    if (tile && isBuildable(world, agent.position.x, agent.position.y)) {
       addToInventory(agent.inventory, "wood", -SHELTER_WOOD_COST);
       addToInventory(agent.inventory, "stone", -SHELTER_STONE_COST);
       const id = nextId(world, "shel");
@@ -621,6 +676,8 @@ function doBuild(world: WorldState, agent: Agent): void {
       world.shelters[id] = shelter;
       tile.shelterId = id;
     } else {
+      const spot = findBuildSpot(world, agent.position);
+      if (spot) moveStep(world, agent, spot, false);
       return;
     }
   }
@@ -647,42 +704,72 @@ function doBuild(world: WorldState, agent: Agent): void {
   }
 }
 
-function doRest(world: WorldState, agent: Agent): void {
-  const tile = getTile(world, agent.position.x, agent.position.y);
-  const sheltered = !!tile?.shelterId;
+type Shelter = WorldState["shelters"][string];
 
-  // If exposed and a finished shelter is available, head there instead of
-  // resting in the open. This gives a built shelter communal survival value.
-  if (!sheltered && agent.needs.shelter > 55) {
+/** A shelter has room for this agent if they already hold a slot or one is free. */
+function shelterRoomFor(sh: Shelter, agent: Agent): boolean {
+  return sh.occupantIds.includes(agent.id) || sh.occupantIds.length < SHELTER_CAPACITY;
+}
+
+/** Claim a sleeping slot (occupantIds is reset each dawn, so it's per-night). */
+function reserveShelter(sh: Shelter, agent: Agent): void {
+  if (!sh.occupantIds.includes(agent.id)) sh.occupantIds.push(agent.id);
+}
+
+function doRest(world: WorldState, agent: Agent): void {
+  let tile = getTile(world, agent.position.x, agent.position.y);
+  let here = tile?.shelterId ? world.shelters[tile.shelterId] : undefined;
+  const onUsableShelter = !!here && here.progress >= 100 && shelterRoomFor(here, agent);
+
+  // At night (or when exposed) head for a shelter with a free slot and sleep
+  // there. Once on it, don't move — sleep is meant to be a stationary stretch.
+  const wantShelter = isNight(world) || agent.needs.shelter > 45;
+  if (wantShelter && !onUsableShelter) {
     const sh = findUsableShelter(world, agent);
-    if (sh && (sh.position.x !== agent.position.x || sh.position.y !== agent.position.y)) {
-      moveStep(world, agent, sh.position, false);
-      return;
+    if (sh) {
+      reserveShelter(sh, agent); // hold the slot even while walking over (counts toward capacity)
+      if (sh.position.x !== agent.position.x || sh.position.y !== agent.position.y) {
+        moveStep(world, agent, sh.position, false); // walk to bed
+        return;
+      }
+      tile = getTile(world, sh.position.x, sh.position.y);
+      here = sh;
     }
   }
 
-  agent.needs.energy = clamp100(agent.needs.energy - (sheltered ? 22 : 14));
+  // Per-tick rest effects are scaled to a 60-tick day so a night of sleep does
+  // the same thing regardless of how long the day is (longer day = more, smaller
+  // ticks). Without this, a 150-tick day's long nights pile up exposure and kill.
+  const k = 60 / Math.max(1, world.config.ticksPerDay);
+  const sheltered = !!here && here.progress >= 100 && shelterRoomFor(here, agent);
   if (sheltered) {
-    agent.needs.shelter = clamp100(agent.needs.shelter - 25);
-    agent.needs.safety = clamp100(agent.needs.safety - 10);
-    const sh = world.shelters[tile!.shelterId!];
-    if (sh && !sh.occupantIds.includes(agent.id)) sh.occupantIds.push(agent.id);
+    reserveShelter(here!, agent);
+    agent.needs.energy = clamp100(agent.needs.energy - 24 * k);
+    agent.needs.shelter = clamp100(agent.needs.shelter - 30 * k);
+    agent.needs.safety = clamp100(agent.needs.safety - 10 * k);
+    agent.health = clamp100(agent.health + 0.9 * k);
   } else {
-    agent.needs.shelter = clamp100(agent.needs.shelter + 1.5); // resting in the open
+    // Sleeping rough: less restful, and exposure creeps up so they're motivated
+    // to build or claim a shelter.
+    agent.needs.energy = clamp100(agent.needs.energy - 14 * k);
+    agent.needs.shelter = clamp100(agent.needs.shelter + 1.5 * k);
+    agent.health = clamp100(agent.health + 0.5 * k);
   }
-  agent.health = clamp100(agent.health + 0.6);
 }
 
-/** Nearest finished shelter the agent may use (own, group's, or unclaimed-by-group). */
-function findUsableShelter(world: WorldState, agent: Agent) {
-  let best: (typeof world.shelters)[string] | undefined;
+/** Nearest finished, non-full, reachable shelter the agent may use (own,
+ *  group's, or unclaimed-by-group). */
+function findUsableShelter(world: WorldState, agent: Agent): Shelter | undefined {
+  let best: Shelter | undefined;
   let bestD = Infinity;
   for (const id in world.shelters) {
     const sh = world.shelters[id];
     if (sh.progress < 100) continue;
     const restricted = sh.groupId && !agent.groupIds.includes(sh.groupId) && sh.ownerId !== agent.id;
     if (restricted) continue;
+    if (!shelterRoomFor(sh, agent)) continue; // full — find another / sleep rough
     const d = dist(agent.position, sh.position);
+    if (d > SHELTER_SEEK_RANGE) continue;
     if (d < bestD) {
       bestD = d;
       best = sh;
