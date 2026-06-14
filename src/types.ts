@@ -47,6 +47,8 @@ export type Tile = {
   terrain: TerrainType;
   resource?: Resource;
   shelterId?: string;
+  /** A communal food store (granary) occupying this tile, if any. */
+  foodStoreId?: string;
   walkable: boolean;
 };
 
@@ -65,6 +67,25 @@ export type Shelter = {
   occupantIds: string[];
   /** If owned by a group, only members may shelter here (future: laws). */
   groupId?: string;
+};
+
+/**
+ * A granary: a communal FOOD store occupying one tile. Distinct from a Shelter
+ * (which houses people). Food kept here spoils far slower than food carried in
+ * an agent's pack, so the village builds granaries to preserve surplus.
+ */
+export type FoodStore = {
+  id: string;
+  position: Position;
+  /** 0..100 — build progress; usable once it reaches 100. */
+  progress: number;
+  /** 0..100 — structural integrity (future: disasters/raids). */
+  integrity: number;
+  ownerId: string;
+  /** Stored food units. */
+  food: number;
+  /** Max food it can hold. */
+  capacity: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -272,6 +293,8 @@ export type AgentAction =
   | "heal"
   | "teach"
   | "craft_tool"
+  | "store_food"
+  | "get_food"
   | "reproduce"
   | "form_group"
   | "join_group"
@@ -303,6 +326,10 @@ export type Agent = {
   alive: boolean;
   causeOfDeath?: string;
   deathDay?: number;
+  /** Who last attacked this agent, and when — so a death from combat wounds a few
+   *  ticks later is still attributed to the attacker (feeds the killer-feud logic). */
+  lastAttackerId?: string;
+  lastAttackTick?: number;
 
   currentGoal?: string;
   currentAction?: AgentAction;
@@ -628,6 +655,9 @@ export type SimulationConfig = {
   diseaseEnabled: boolean;
   weatherEnabled: boolean;
   disastersEnabled: boolean;
+  /** Seasonal swings in renewable-resource regen (boom in spring/summer,
+   *  famine in winter). Drives a store-for-winter survival loop. */
+  seasonsEnabled: boolean;
 
   llm: LLMConfig;
 
@@ -677,6 +707,8 @@ export type WorldState = {
   agents: Record<string, Agent>;
   agentOrder: string[]; // stable iteration / spawn order
   shelters: Record<string, Shelter>;
+  /** Communal granaries (food stores), keyed by id. */
+  foodStores: Record<string, FoodStore>;
   groups: Record<string, Group>;
   messages: Message[];
   events: WorldEvent[];

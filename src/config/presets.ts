@@ -25,6 +25,7 @@ const PRESET_OVERRIDES: Record<WorldPresetName, Partial<SimulationConfig>> = {
     startingWater: 500,
     hungerRate: 8,
     thirstRate: 10,
+    seasonsEnabled: false, // a frictionless world: no famine winters
   },
   "Balanced Village": {
     // The default config IS the balanced village.

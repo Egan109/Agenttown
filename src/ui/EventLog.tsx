@@ -18,16 +18,21 @@ const FILTERS: { label: string; types: WorldEvent["type"][] | null }[] = [
 const SUMMARY_FILTER = FILTERS.findIndex((f) => f.label === "Summary");
 
 export function EventLog() {
-  const tick = useStore((s) => s.tick);
+  // Re-render only when the event count changes (not every tick), so rendering a
+  // long history doesn't churn 8×/second.
+  const eventCount = useStore((s) => s.world.events.length);
   const [filter, setFilter] = useState(0);
   const events = useStore.getState().world.events;
 
   const shown = useMemo(() => {
     const f = FILTERS[filter];
     const list = f.types ? events.filter((e) => f.types!.includes(e.type)) : events;
-    return list.slice(-200).reverse();
+    // Filtered views (Drama/Social/Minds) are low-volume — show the whole run.
+    // The unfiltered "All" view is capped just to bound the DOM size.
+    const limited = f.types ? list : list.slice(-1500);
+    return limited.slice().reverse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, filter, events]);
+  }, [eventCount, filter, events]);
 
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>

@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { lightLevel } from "../simulation/dayNightCycle";
-import type { AgentAction, EmotionalState, Shelter, TerrainType, WorldState } from "../types";
+import type { AgentAction, EmotionalState, FoodStore, Shelter, TerrainType, WorldState } from "../types";
 
 const TERRAIN_COLORS: Record<TerrainType, string> = {
   grass: "#2c3a26",
@@ -24,6 +24,17 @@ const RESOURCE_COLORS: Record<string, string> = {
   water: "#5ab0ff",
 };
 
+// Distinct icon per resource so the map reads at a glance (vs. ambiguous orbs).
+const RESOURCE_GLYPH: Record<string, string> = {
+  food: "🍎",
+  wood: "🌲",
+  stone: "🪨",
+  medicine: "💊",
+  tools: "🔧",
+  luxury: "💎",
+  water: "💧",
+};
+
 // A small emoji per action so the map reads as a living scene at a glance.
 const ACTION_GLYPH: Partial<Record<AgentAction, string>> = {
   gather_food: "🌾",
@@ -42,6 +53,8 @@ const ACTION_GLYPH: Partial<Record<AgentAction, string>> = {
   heal: "➕",
   teach: "📚",
   craft_tool: "🛠️",
+  store_food: "📥",
+  get_food: "🍽️",
   reproduce: "❤️",
   form_group: "👥",
   join_group: "👥",
@@ -51,10 +64,52 @@ const ACTION_GLYPH: Partial<Record<AgentAction, string>> = {
   // move / idle: intentionally no glyph (avoids clutter for the common case)
 };
 
+type Hover = { left: number; top: number; lines: string[] };
+
 export function WorldView() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const selectAgent = useStore((s) => s.selectAgent);
+  const [hover, setHover] = useState<Hover | null>(null);
+
+  // Hover -> tooltip describing the tile under the cursor (granary stock,
+  // shelter occupants, resource node amount). Only re-renders when the hovered
+  // tile changes, so it doesn't churn on every pixel of mouse movement.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    let lastKey = "";
+    const onMove = (e: MouseEvent) => {
+      const world = useStore.getState().world;
+      const geom = computeGeom(canvas, world);
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const tx = Math.floor((px - geom.ox) / geom.cell);
+      const ty = Math.floor((py - geom.oy) / geom.cell);
+      const key = `${tx},${ty}`;
+      if (key === lastKey) return;
+      lastKey = key;
+      const lines = tileInfo(world, tx, ty);
+      if (!lines) {
+        setHover(null);
+        return;
+      }
+      const wrect = wrap.getBoundingClientRect();
+      setHover({ left: e.clientX - wrect.left + 14, top: e.clientY - wrect.top + 14, lines });
+    };
+    const onLeave = () => {
+      lastKey = "";
+      setHover(null);
+    };
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", onLeave);
+    return () => {
+      canvas.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("mouseleave", onLeave);
+    };
+  }, []);
 
   // Click -> select agent at the clicked tile.
   useEffect(() => {
@@ -110,8 +165,61 @@ export function WorldView() {
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
       <canvas ref={canvasRef} style={{ width: "100%", height: "100%", cursor: "pointer", display: "block" }} />
+      {hover && (
+        <div
+          style={{
+            position: "absolute",
+            left: hover.left,
+            top: hover.top,
+            pointerEvents: "none",
+            background: "rgba(12,16,22,0.94)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: "5px 8px",
+            fontSize: 11,
+            lineHeight: 1.5,
+            color: "var(--text)",
+            whiteSpace: "nowrap",
+            zIndex: 5,
+            maxWidth: 240,
+          }}
+        >
+          {hover.lines.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+/** Lines describing what's on a tile, for the hover tooltip (or null if nothing
+ *  noteworthy is there). */
+function tileInfo(world: WorldState, tx: number, ty: number): string[] | null {
+  const t = world.tiles[ty]?.[tx];
+  if (!t) return null;
+  const lines: string[] = [];
+
+  if (t.foodStoreId) {
+    const g = world.foodStores[t.foodStoreId];
+    if (g) lines.push(`🌾 Granary — ${Math.floor(g.food)} / ${g.capacity} food`);
+  }
+  if (t.shelterId) {
+    const sh = world.shelters[t.shelterId];
+    if (sh) {
+      lines.push(
+        sh.progress >= 100
+          ? `🛖 Shelter — ${sh.occupantIds.length} sleeping`
+          : `🛖 Shelter (building ${Math.round(sh.progress)}%)`
+      );
+    }
+  }
+  if (t.resource && t.resource.amount > 0) {
+    const name = t.resource.type.charAt(0).toUpperCase() + t.resource.type.slice(1);
+    lines.push(`${name}: ${Math.round(t.resource.amount)}`);
+  }
+
+  return lines.length ? lines : null;
 }
 
 type Geom = { cell: number; ox: number; oy: number };
@@ -145,19 +253,31 @@ function drawWorld(
       ctx.fillRect(sx, sy, cell - 1, cell - 1);
 
       if (t.resource && t.resource.amount > 0 && cell > 4) {
-        // Radius (not just alpha) tracks the remaining amount, so a tile visibly
-        // shrinks as it's gathered and pops back after the daily regen.
         const a = Math.min(1, t.resource.amount / 30);
-        const r = Math.max(1.2, cell * (0.09 + 0.18 * a));
-        ctx.fillStyle = RESOURCE_COLORS[t.resource.type] ?? "#fff";
-        ctx.globalAlpha = 0.35 + a * 0.6;
-        ctx.beginPath();
-        ctx.arc(sx + cell * 0.5, sy + cell * 0.5, r, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.globalAlpha = 0.4 + a * 0.6; // fade as the node is depleted
+        const glyph = RESOURCE_GLYPH[t.resource.type];
+        if (glyph && cell >= 12) {
+          // Icon (tree/food/etc.); font size grows a little with the amount.
+          const fs = Math.max(9, cell * (0.42 + 0.22 * a));
+          ctx.font = `${fs}px -apple-system, "Segoe UI Emoji", "Segoe UI", sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(glyph, sx + cell * 0.5, sy + cell * 0.52);
+        } else {
+          // Tiny cells: fall back to a colored dot that shrinks as it depletes.
+          const r = Math.max(1.2, cell * (0.09 + 0.18 * a));
+          ctx.fillStyle = RESOURCE_COLORS[t.resource.type] ?? "#fff";
+          ctx.beginPath();
+          ctx.arc(sx + cell * 0.5, sy + cell * 0.5, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.globalAlpha = 1;
       }
       if (t.shelterId && cell > 4) {
         drawShelter(ctx, world.shelters[t.shelterId], sx, sy, cell);
+      }
+      if (t.foodStoreId && cell > 4) {
+        drawGranary(ctx, world.foodStores[t.foodStoreId], sx, sy, cell);
       }
     }
   }
@@ -273,6 +393,41 @@ function drawShelter(
   } else if (!built && sh && cell > 6) {
     // Build-progress bar across the bottom of the tile.
     const p = Math.max(0, Math.min(1, sh.progress / 100));
+    const bw = cell - 5;
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(sx + 2, sy + cell - 4, bw, 2);
+    ctx.fillStyle = accent;
+    ctx.fillRect(sx + 2, sy + cell - 4, bw * p, 2);
+  }
+}
+
+/** Draw a granary (communal food store): a tan barn footprint, a 🌾 marker, and
+ *  a fill bar showing how stocked it is. Visually distinct from a house. */
+function drawGranary(
+  ctx: CanvasRenderingContext2D,
+  g: FoodStore | undefined,
+  sx: number,
+  sy: number,
+  cell: number
+): void {
+  if (!g) return;
+  const accent = "#d9a441";
+  ctx.fillStyle = "rgba(217,164,65,0.20)";
+  ctx.fillRect(sx, sy, cell - 1, cell - 1);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.6;
+  ctx.strokeRect(sx + 1, sy + 1, cell - 3, cell - 3);
+
+  if (cell >= 12) {
+    const fs = cell * 0.5;
+    ctx.font = `${fs}px -apple-system, "Segoe UI Emoji", "Segoe UI", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🌾", sx + cell * 0.5, sy + cell * 0.46);
+  }
+  if (cell > 6) {
+    // Fill bar (how full the store is).
+    const p = Math.max(0, Math.min(1, g.food / g.capacity));
     const bw = cell - 5;
     ctx.fillStyle = "rgba(0,0,0,0.4)";
     ctx.fillRect(sx + 2, sy + cell - 4, bw, 2);

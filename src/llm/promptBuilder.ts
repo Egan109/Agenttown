@@ -10,6 +10,8 @@ export const REFLECTION_SYSTEM_PROMPT = `You are the inner mind of an autonomous
 You are not controlling movement directly. You are updating the agent's personality, priorities, beliefs, goals, emotions, and social opinions based on what happened today.
 
 Rules:
+- VOICE: write every text field as the agent's RAW INNER VOICE — first person, present tense, blunt and emotional. Name other villagers by name. Say plainly who you trust, fear, resent, need, or want to target. This is a private thought, not a report. NEVER describe yourself from the outside and NEVER write a neutral third-person summary (no "X traded with Y, reinforcing stability"). Write like "I'm still starving. Lina's an easy mark. I need to watch Theo — he's getting aggressive with me."
+- DEATH / VIOLENCE FIRST: if a villager died today, or someone betrayed or attacked you (marked ‼️ in the events), that is the single most important thing on your mind tonight. Your emotions, private thoughts, beliefs and strategy must center on it before anything else — name who died or who wronged you and how you feel about it.
 - Stay consistent with the agent's persona and traits.
 - Do not make the agent all-knowing. Only react to events the agent experienced or plausibly heard about.
 - Hunger, thirst, danger, betrayal, kindness, loneliness, and success should shift priorities.
@@ -32,12 +34,12 @@ const JSON_SHAPE = `{
   "relationshipUpdates": [
     { "agentId": "use a real id from the relationships list above", "trustDelta": 0, "affectionDelta": 0, "fearDelta": 0, "respectDelta": 0, "resentmentDelta": 0, "attractionDelta": 0, "note": "why your feeling changed" }
   ],
-  "newBeliefs": [ { "statement": "a belief in the agent's voice", "confidence": 70, "emotionalWeight": 40 } ],
-  "updatedGoals": [ { "description": "a goal in the agent's voice", "priority": 60, "status": "active" } ],
+  "newBeliefs": [ { "statement": "a belief in MY voice, first person", "confidence": 70, "emotionalWeight": 40 } ],
+  "updatedGoals": [ { "description": "a goal in MY voice, first person", "priority": 60, "status": "active" } ],
   "emotionalState": { "happiness": 50, "anger": 15, "fear": 20, "loneliness": 25, "hope": 50, "shame": 5, "grief": 0 },
-  "currentStrategy": "a specific sentence in the agent's voice about tomorrow",
-  "privateThoughts": ["a specific private thought"],
-  "reflectionSummary": "a specific one-sentence summary of today"
+  "currentStrategy": "first person, present tense: what I'll do tomorrow and why",
+  "privateThoughts": ["a blunt first-person thought, naming names"],
+  "reflectionSummary": "first person, present tense, 1-2 short raw sentences in MY own voice"
 }`;
 
 function topTraits(traits: Record<string, number>, n: number): string {
@@ -62,9 +64,13 @@ function relationshipsBlock(input: NightlyReflectionInput): string {
 
 function eventsBlock(input: NightlyReflectionInput): string {
   if (input.todaysEvents.length === 0) return "(an uneventful day)";
-  return input.todaysEvents
-    .slice(-14)
-    .map((e) => `- ${e.text}`)
+  // Surface the most emotionally significant events first and guarantee they
+  // survive the cap — a death, betrayal or attack must never be crowded out by a
+  // day full of routine trades. Heavy events get a marker so the model weights them.
+  const sorted = [...input.todaysEvents].sort((a, b) => b.emotionalWeight - a.emotionalWeight);
+  return sorted
+    .slice(0, 14)
+    .map((e) => (e.emotionalWeight >= 70 ? `- ‼️ ${e.text}` : `- ${e.text}`))
     .join("\n");
 }
 
@@ -117,7 +123,7 @@ World situation: population ${w.population}, food scarcity ${w.foodScarcity.toFi
     2
   )}, deaths today ${w.deathsToday}, births today ${w.birthsToday}, conflicts today ${w.conflictsToday}.
 
-Task: Decide how ${a.name} feels tonight and what they will prioritize tomorrow.
+Task: Speak as ${a.name} — their raw inner voice tonight. Decide how you feel and what you'll prioritize tomorrow. Write the text fields in FIRST PERSON, present tense, blunt; name the villagers you mean. If someone died or wronged you today (‼️ above), that comes first.
 Use agentId values exactly as they appear in the relationships above when giving relationshipUpdates.
 
 Return ONLY a JSON object with exactly these keys. The numbers below are an EXAMPLE of the format — replace EVERY value with your own judgement based on ${a.name}'s persona, needs and today's events. Do not copy the example values.

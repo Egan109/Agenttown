@@ -50,7 +50,7 @@ export const defaultConfig: SimulationConfig = {
   resourceScarcity: 0.5,
   resourceRegenerationRate: 1,
 
-  hungerRate: 12,
+  hungerRate: 20,
   thirstRate: 16,
   hygieneDecayRate: 8,
   energyDecayRate: 14,
@@ -69,6 +69,10 @@ export const defaultConfig: SimulationConfig = {
   weatherEnabled: false,
   disastersEnabled: false,
 
+  // Seasonal boom-and-famine: cycles food (and other renewable) regen through
+  // the year so the village must store surplus in autumn to survive winter.
+  seasonsEnabled: true,
+
   llm: defaultLLMConfig,
 
   mutationRate: 0.25,
@@ -77,9 +81,11 @@ export const defaultConfig: SimulationConfig = {
   // Longer days = more gameplay between dawns, so the (sim-pausing) nightly
   // reflections interrupt less often. Need-decay rates are per-day, so day length
   // is balance-neutral; it only changes how much you watch between reflections.
-  // Set fairly long by default because a real local-LLM dawn can take several
-  // seconds per agent and you don't want that pause every few seconds of play.
-  ticksPerDay: 150,
+  // Set long by default because a real local-LLM dawn can take several seconds
+  // per agent and you don't want that pause every few seconds of play. Balance
+  // is day-length-neutral (see needs.ts / doRest scaling), so this is purely a
+  // pacing choice.
+  ticksPerDay: 600,
 };
 
 export function cloneConfig(c: SimulationConfig): SimulationConfig {

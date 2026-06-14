@@ -108,7 +108,9 @@ function summarize(input: NightlyReflectionInput): string {
   if (input.todaysEvents.length === 0) {
     return `${input.agent.name} had a quiet day.`;
   }
-  const e = input.todaysEvents[input.todaysEvents.length - 1];
+  // Center on the most significant thing that happened today (a death or betrayal
+  // outweighs a day of routine trades), not merely the last event in the list.
+  const e = [...input.todaysEvents].sort((a, b) => b.emotionalWeight - a.emotionalWeight)[0];
   return `${input.agent.name}: ${e.text}`;
 }
 

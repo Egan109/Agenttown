@@ -14,7 +14,8 @@ import { parseLooseJson } from "./repairJson";
 // view only — like the reflections themselves, it never touches world state.
 // ---------------------------------------------------------------------------
 
-const MAX_SUMMARIES = 120;
+// Keep the full run's chronicles (one per day) so the Diary spans day 1 → last.
+const MAX_SUMMARIES = 100000;
 
 /** One agent's reflection, as collected by the orchestrator. */
 export type ReflectionDigest = {

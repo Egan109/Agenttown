@@ -20,19 +20,22 @@ function Num({
   const value = useStore((s) => s.world.config[k]) as number;
   const update = useStore.getState().updateConfig;
   return (
-    <div className="row" style={{ gap: 6 }}>
+    <div className="row" style={{ gap: 8 }}>
+      {/* Value sits LEFT of the slider so it's never clipped at the panel edge. */}
+      <span className="mono" style={{ width: 25, textAlign: "right", fontSize: 11, flexShrink: 0 }}>
+        {typeof value === "number" && step < 1 ? value.toFixed(2) : value}
+      </span>
+      {/* Fixed, modest width so the slider sits neatly inside the panel instead
+          of stretching to the right border. */}
       <input
         type="range"
         min={min}
         max={max}
         step={step}
         value={value}
-        style={{ flex: 1 }}
+        style={{ width: 130, flexShrink: 0 }}
         onChange={(e) => update({ [k]: Number(e.target.value) } as Partial<SimulationConfig>)}
       />
-      <span className="mono" style={{ width: 38, textAlign: "right", fontSize: 11 }}>
-        {typeof value === "number" && step < 1 ? value.toFixed(2) : value}
-      </span>
     </div>
   );
 }
@@ -121,14 +124,14 @@ export function ConfigPanel() {
         <Num k="resourceRegenerationRate" min={0.1} max={3} step={0.1} />
       </Field>
       <Field label="Day length (ticks)">
-        <Num k="ticksPerDay" min={12} max={480} step={6} />
+        <Num k="ticksPerDay" min={12} max={1200} step={12} />
       </Field>
 
       <div className="dim" style={{ fontSize: 10, margin: "8px 0 2px" }}>
         NEED DECAY (per day)
       </div>
       <Field label="Hunger">
-        <Num k="hungerRate" min={2} max={40} />
+        <Num k="hungerRate" min={2} max={120} />
       </Field>
       <Field label="Thirst">
         <Num k="thirstRate" min={2} max={40} />
@@ -163,6 +166,7 @@ export function ConfigPanel() {
         <Toggle k="stealingEnabled" label="Stealing" />
         <Toggle k="tradingEnabled" label="Trading" />
         <Toggle k="diplomacyEnabled" label="Diplomacy" />
+        <Toggle k="seasonsEnabled" label="Seasons" />
       </div>
     </Section>
   );

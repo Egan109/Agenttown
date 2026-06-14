@@ -212,19 +212,21 @@ export function generateTiles(config: SimulationConfig, rng: Rng): Tile[][] {
     t.resource = makeResource("stone", rng.int(15, 45), false);
   });
 
-  // Berry/food patches on grass (renewable).
-  const foodTiles = Math.round(W * H * 0.09 * (0.3 + scarcity * 1.2));
+  // Berry/food patches on grass (renewable). Deliberately lean: fewer patches
+  // and a slower regen than terrain like forest, so food is the resource the
+  // village actually competes over (drives hunger-theft -> feuds).
+  const foodTiles = Math.round(W * H * 0.05 * (0.2 + scarcity));
   scatterScattered(tiles, rng, foodTiles, (t) => {
     if (t.terrain !== "grass" || t.resource) return;
-    t.resource = makeResource("food", rng.int(15, 40), true, (0.8 + scarcity) * regenMul);
+    t.resource = makeResource("food", rng.int(12, 30), true, (0.3 + scarcity * 0.6) * regenMul);
   });
 
   // A couple of seeded farms (denser renewable food).
-  const farmTiles = Math.max(2, Math.round(scarcity * 6));
+  const farmTiles = Math.max(2, Math.round(scarcity * 5));
   scatterScattered(tiles, rng, farmTiles, (t) => {
     if (t.terrain !== "grass" || t.resource) return;
     t.terrain = "farm";
-    t.resource = makeResource("food", rng.int(30, 60), true, (1.2 + scarcity) * regenMul);
+    t.resource = makeResource("food", rng.int(24, 48), true, (0.7 + scarcity * 0.6) * regenMul);
   });
 
   // Medicine herbs (rare, renewable but slow).
@@ -333,6 +335,7 @@ export function createWorld(
     agents,
     agentOrder,
     shelters: {},
+    foodStores: {},
     groups: {},
     messages: [],
     events: [],

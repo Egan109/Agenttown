@@ -47,6 +47,10 @@ export function resolveAttack(
   // Damage to defender scales with how much the attacker overpowers them.
   const dmgToDefender = clamp100(14 + (ap - dp) * 0.4 + rng.float(0, 10));
   defender.health = clamp100(defender.health - dmgToDefender);
+  // Remember the assailant so a death from these wounds (which may finalize a tick
+  // later via need/frailty damage) is still blamed on the attacker, not "injuries".
+  defender.lastAttackerId = attacker.id;
+  defender.lastAttackTick = world.tick;
 
   // Counterattack unless the defender is broken or very submissive/afraid.
   const defRel = getRelationship(defender, attacker.id);
@@ -100,7 +104,7 @@ export function resolveAttack(
       addToInventory(attacker.inventory, "food", food);
       defender.inventory.food = 0;
     }
-    killAgent(world, defender, `killed by ${attacker.name}`);
+    killAgent(world, defender, `killed by ${attacker.name}`, attacker);
     defenderDied = true;
     addMemory(
       attacker,

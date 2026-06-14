@@ -1,4 +1,5 @@
 import type { ResourceType, Tile, WorldState } from "../types";
+import { seasonRegenMultiplier } from "./seasons";
 
 export const GATHERABLE: ResourceType[] = ["food", "water", "wood", "stone", "medicine"];
 
@@ -32,13 +33,14 @@ export function extractFromTile(tile: Tile, requested: number): number {
 
 /** Regenerate renewable resources. Called once per in-game day at dawn. */
 export function regenerateResources(world: WorldState): void {
+  const seasonMul = seasonRegenMultiplier(world.day, world.config.seasonsEnabled);
   for (const row of world.tiles) {
     for (const t of row) {
       const r = t.resource;
       if (!r || !r.renewable) continue;
       const cap = capForTerrain(t.terrain);
       if (r.amount < cap) {
-        r.amount = Math.min(cap, r.amount + (r.regenerationRate ?? 0.5));
+        r.amount = Math.min(cap, r.amount + (r.regenerationRate ?? 0.5) * seasonMul);
       }
     }
   }

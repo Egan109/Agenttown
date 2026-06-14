@@ -1,6 +1,13 @@
 import type { AgentEvent, WorldEvent, WorldEventType, WorldState } from "../types";
 
-const MAX_EVENTS = 600;
+// Trivial chatter (greetings, ordinary trades, etc.) is bounded so memory stays
+// sane, but the *narrative* — reflections, daily chronicles and notable events —
+// is NEVER trimmed, so you can scroll the log from day 1 to the last day.
+const MAX_CHATTER = 3000;
+
+function isNarrative(e: WorldEvent): boolean {
+  return e.type === "reflection" || e.type === "chronicle" || e.severity >= 2;
+}
 
 let eventCounter = 0;
 
@@ -26,8 +33,20 @@ export function logEvent(
     severity,
   };
   world.events.push(ev);
-  if (world.events.length > MAX_EVENTS) {
-    world.events.splice(0, world.events.length - MAX_EVENTS);
+
+  // Trim only the oldest *trivial* events once chatter piles up; keep every
+  // narrative event forever so the full story survives.
+  let chatter = 0;
+  for (const e of world.events) if (!isNarrative(e)) chatter++;
+  if (chatter > MAX_CHATTER) {
+    let toDrop = chatter - MAX_CHATTER;
+    world.events = world.events.filter((e) => {
+      if (toDrop > 0 && !isNarrative(e)) {
+        toDrop--;
+        return false;
+      }
+      return true;
+    });
   }
 
   if (agentFeed) {

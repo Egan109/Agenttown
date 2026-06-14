@@ -35,7 +35,10 @@ export function App() {
               </button>
             ))}
           </div>
-          <div style={{ overflowY: "auto", flex: 1, minHeight: 0, paddingRight: 2 }}>
+          <div
+            data-testid="left-panel-scroll"
+            style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0, paddingRight: 2 }}
+          >
             {tab === "metrics" && <MetricsPanel />}
             {tab === "world" && <ConfigPanel />}
             {tab === "minds" && <LLMSettingsPanel />}

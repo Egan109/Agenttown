@@ -1,5 +1,6 @@
 import { useStore } from "../state/store";
 import { PRESET_NAMES } from "../config/presets";
+import { SEASON_LABEL, seasonForDay } from "../simulation/seasons";
 import type { WorldPresetName } from "../types";
 
 const SPEEDS = [1, 2, 4, 8, 16, 40];
@@ -77,6 +78,9 @@ export function SimulationControls() {
         <span className="tag">
           Day {world.day} · {timeLabel}
         </span>
+        {world.config.seasonsEnabled && (
+          <span className="tag">{SEASON_LABEL[seasonForDay(world.day)]}</span>
+        )}
         <span className="tag">{useStore.getState().metrics.population} alive</span>
         {reflecting && (
           <span className="tag" style={{ borderColor: "var(--accent-2)", color: "var(--accent-2)" }}>

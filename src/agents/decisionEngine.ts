@@ -56,6 +56,13 @@ const INVENTORY_SOFTCAP = 30;
 const SHELTER_CAPACITY = 1;
 /** Don't trek across the whole map to a shelter at bedtime; sleep where you are. */
 const SHELTER_SEEK_RANGE = 12;
+/** Granary (communal food store) — cheaper than a house, wood only. */
+const GRANARY_WOOD_COST = 6;
+const GRANARY_CAPACITY = 150;
+/** Food an agent keeps in its pack before depositing the surplus in a granary. */
+const FOOD_KEEP = 10;
+/** How far an agent will travel to use/build a granary. */
+const GRANARY_SEEK_RANGE = 14;
 
 type Perception = {
   nearby: Agent[];
@@ -456,6 +463,44 @@ function scoreActions(world: WorldState, agent: Agent, p: Perception): Scored[] 
     });
   }
 
+  // Store food in a granary -------------------------------------------------
+  // Carried food spoils faster than stored food, so an agent with surplus takes
+  // it to a granary (or builds one if it has the wood and none is reachable).
+  const ownFoodNow = inventoryCount(agent.inventory, "food");
+  const surplus = ownFoodNow - FOOD_KEEP;
+  const granaryToFill = findUsableGranary(world, agent.position);
+  const canBuildGranary =
+    inventoryCount(agent.inventory, "wood") >= GRANARY_WOOD_COST && underGranaryCap(world);
+  if (surplus > 4 && (granaryToFill || canBuildGranary)) {
+    scores.push({
+      action: "store_food",
+      score:
+        surplus * 1.1 +
+        t.industriousness * 0.2 +
+        t.discipline * 0.2 +
+        pr.cooperation * 0.2 +
+        14 -
+        (granaryToFill ? proximityPenalty(agent.position, granaryToFill.position) : 6),
+    });
+  }
+
+  // Get food from a granary -------------------------------------------------
+  // When hungry with an empty-ish pack and no food node is close, draw from the
+  // communal store instead of starving.
+  const granaryWithFood = findGranaryWithFood(world, agent.position);
+  if (granaryWithFood && ownFoodNow < 3 && n.hunger > 35) {
+    const foodTileDist = foodTile ? dist(agent.position, foodTile) : 999;
+    const granaryDist = dist(agent.position, granaryWithFood.position);
+    scores.push({
+      action: "get_food",
+      score:
+        n.hunger * 1.4 +
+        pr.food +
+        (granaryDist <= foodTileDist ? 18 : 0) -
+        proximityPenalty(agent.position, granaryWithFood.position),
+    });
+  }
+
   return scores;
 }
 
@@ -475,6 +520,46 @@ function pickAttackTarget(agent: Agent, p: Perception): Agent | undefined {
       bestResent = rel.resentment;
       best = other;
     }
+  }
+  return best;
+}
+
+type FoodStore = WorldState["foodStores"][string];
+
+/** Nearest finished granary with spare capacity, within range (communal — any
+ *  villager may use it). */
+function findUsableGranary(world: WorldState, pos: Position): FoodStore | undefined {
+  let best: FoodStore | undefined;
+  let bestD = Infinity;
+  for (const id in world.foodStores) {
+    const g = world.foodStores[id];
+    if (g.progress < 100 || g.food >= g.capacity) continue;
+    const d = dist(pos, g.position);
+    if (d > GRANARY_SEEK_RANGE || d >= bestD) continue;
+    bestD = d;
+    best = g;
+  }
+  return best;
+}
+
+/** Cap the number of communal granaries so the village builds a few well-used
+ *  stores rather than littering the map (≈ one per 3 villagers, min 2). */
+function underGranaryCap(world: WorldState): boolean {
+  const cap = Math.max(2, Math.ceil(livingAgents(world).length / 3));
+  return Object.keys(world.foodStores).length < cap;
+}
+
+/** Nearest finished granary that actually has food to draw, within range. */
+function findGranaryWithFood(world: WorldState, pos: Position): FoodStore | undefined {
+  let best: FoodStore | undefined;
+  let bestD = Infinity;
+  for (const id in world.foodStores) {
+    const g = world.foodStores[id];
+    if (g.progress < 100 || g.food <= 0) continue;
+    const d = dist(pos, g.position);
+    if (d > GRANARY_SEEK_RANGE || d >= bestD) continue;
+    bestD = d;
+    best = g;
   }
   return best;
 }
@@ -584,7 +669,9 @@ function autoConsume(agent: Agent): void {
   // Eat / drink from inventory automatically when needs are pressing.
   if (agent.needs.hunger > 35 && inventoryCount(agent.inventory, "food") > 0) {
     addToInventory(agent.inventory, "food", -1);
-    agent.needs.hunger = clamp100(agent.needs.hunger - 35);
+    // One food unit only takes the edge off hunger (was 35) — agents must eat
+    // more often, so food is a resource they actively work for, not a one-shot.
+    agent.needs.hunger = clamp100(agent.needs.hunger - 24);
   }
   if (agent.needs.thirst > 35 && inventoryCount(agent.inventory, "water") > 0) {
     addToInventory(agent.inventory, "water", -1);
@@ -628,10 +715,12 @@ function findAdjacentWater(world: WorldState, pos: Position) {
   return undefined;
 }
 
-/** Is this tile open ground we can raise a hut on? */
+/** Is this tile open ground we can raise a structure (hut/granary) on? */
 function isBuildable(world: WorldState, x: number, y: number): boolean {
   const t = getTile(world, x, y);
-  return !!t && t.walkable && !t.shelterId && (t.terrain === "grass" || t.terrain === "farm");
+  return (
+    !!t && t.walkable && !t.shelterId && !t.foodStoreId && (t.terrain === "grass" || t.terrain === "farm")
+  );
 }
 
 /** Nearest open-ground tile to build on (so an agent carrying materials while
@@ -701,6 +790,68 @@ function doBuild(world: WorldState, agent: Agent): void {
       agent,
       makeMemory(world.tick, world.day, `I built a shelter.`, "achievement", 60, [])
     );
+  }
+}
+
+/** Deposit surplus food into a granary — building one first if the agent has the
+ *  wood and none is reachable. Communal: anyone can fill any granary. */
+function doStoreFood(world: WorldState, agent: Agent): void {
+  let granary = findUsableGranary(world, agent.position);
+
+  if (!granary) {
+    // No reachable granary with room — raise one if we have the wood and the
+    // village isn't already at its granary cap (else keep the food for now).
+    if (inventoryCount(agent.inventory, "wood") < GRANARY_WOOD_COST || !underGranaryCap(world)) return;
+    if (!isBuildable(world, agent.position.x, agent.position.y)) {
+      const spot = findBuildSpot(world, agent.position);
+      if (spot) moveStep(world, agent, spot, false);
+      return;
+    }
+    addToInventory(agent.inventory, "wood", -GRANARY_WOOD_COST);
+    const id = nextId(world, "gran");
+    const tile = getTile(world, agent.position.x, agent.position.y)!;
+    granary = {
+      id,
+      position: { x: tile.x, y: tile.y },
+      progress: 100, // a simple store goes up in one go (cheap, wood-only)
+      integrity: 100,
+      ownerId: agent.id,
+      food: 0,
+      capacity: GRANARY_CAPACITY,
+    };
+    world.foodStores[id] = granary;
+    tile.foodStoreId = id;
+    practiceSkill(agent.skills, "building", 0.5);
+    logEvent(world, "shelter_built", `${agent.name} built a granary.`, [agent.id], 1, { weight: 30 });
+  }
+
+  // Walk to the granary, then deposit the surplus.
+  if (agent.position.x !== granary.position.x || agent.position.y !== granary.position.y) {
+    moveStep(world, agent, granary.position, false);
+    return;
+  }
+  const surplus = inventoryCount(agent.inventory, "food") - FOOD_KEEP;
+  const room = granary.capacity - granary.food;
+  const give = Math.floor(Math.min(surplus, room));
+  if (give > 0) {
+    addToInventory(agent.inventory, "food", -give);
+    granary.food += give;
+  }
+}
+
+/** Draw food from the communal store into the agent's pack (then autoConsume
+ *  eats it next tick). */
+function doGetFood(world: WorldState, agent: Agent): void {
+  const granary = findGranaryWithFood(world, agent.position);
+  if (!granary) return;
+  if (agent.position.x !== granary.position.x || agent.position.y !== granary.position.y) {
+    moveStep(world, agent, granary.position, false);
+    return;
+  }
+  const take = Math.min(granary.food, FOOD_KEEP);
+  if (take > 0) {
+    granary.food -= take;
+    addToInventory(agent.inventory, "food", take);
   }
 }
 
@@ -1097,6 +1248,12 @@ export function runAgentTick(world: WorldState, agent: Agent, rng: Rng): void {
       break;
     case "craft_tool":
       doCraft(agent);
+      break;
+    case "store_food":
+      doStoreFood(world, agent);
+      break;
+    case "get_food":
+      doGetFood(world, agent);
       break;
     case "explore":
     default:

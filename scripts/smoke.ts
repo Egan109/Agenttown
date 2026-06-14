@@ -34,6 +34,8 @@ const living = world.agentOrder.filter((id) => world.agents[id].alive).length;
 
 const finishedShelters = Object.values(world.shelters).filter((s) => s.progress >= 100).length;
 const unfinishedShelters = Object.values(world.shelters).filter((s) => s.progress < 100).length;
+const granaries = Object.values(world.foodStores).length;
+const storedFood = Object.values(world.foodStores).reduce((sum, g) => sum + g.food, 0);
 const deathCauses: Record<string, number> = {};
 for (const id of world.agentOrder) {
   const a = world.agents[id];
@@ -48,6 +50,7 @@ console.log(`reflection inputs prepared at dawns: ${reflectionsPrepared}`);
 console.log(`metrics: pop=${m.population} avgHunger=${m.avgHunger.toFixed(1)} avgThirst=${m.avgThirst.toFixed(1)} avgTrust=${m.avgTrust.toFixed(1)} utopia=${m.utopiaScore.toFixed(0)} collapse=${m.collapseRisk.toFixed(0)}`);
 console.log("action mix:", actionCounts);
 console.log(`shelters: ${finishedShelters} finished, ${unfinishedShelters} in progress`);
+console.log(`granaries: ${granaries}, total stored food: ${storedFood}`);
 console.log("death causes:", Object.keys(deathCauses).length ? deathCauses : "(none)");
 
 // Sample a few recent dramatic events.

@@ -2,15 +2,30 @@
 
 **Audience:** a Claude model picking this project up cold.
 **Status:** MVP complete + **live local-LLM reflection verified** (Ollama / qwen3:4b). Type-checks
-clean, builds, passes headless smoke + cadence audits, dev server boots, and the user has confirmed
-the UI works in the browser.
-**Last verified:** 2026-06 on Node v24.16.0 / npm 11.13.0, RTX 3070, Windows 11.
+clean, builds, passes headless smoke + cadence audits + Playwright UI checks, dev server boots, and
+the user has confirmed the UI works in the browser.
+**Last verified:** 2026-06-14 on Node v24.16.0 / npm 11.13.0, RTX 3070, Windows 11.
 
 AgentTown is a top-down 2D village where every agent is autonomous (traits, needs, memories,
 relationships, goals). The goal is **emergent** social behavior — competition, cooperation,
 reproduction, theft, feuds, factions, collapse or near-utopia — arising from conditions, not a
 scripted story. Read [README.md](README.md) for the player-facing overview; this doc is the
 engineering map.
+
+**Added since the original MVP (newest work — details in §6):**
+- **Daily chronicle / "Summary" tab:** after each reflection batch the narrator weaves the agents'
+  reflections + the day's events into a short story (`llm/daySummary.ts`, JSON-constrained so qwen3
+  reasoning doesn't leak). Shown in the EventLog "Summary" filter.
+- **Food storage & spoilage:** communal **granaries** (`FoodStore`) — distinct from sleeping shelters;
+  pack food spoils fast, stored food slowly; `store_food`/`get_food` actions; granary count soft-capped.
+- **Sleep & shelter model:** agents sleep in long night stretches (hysteresis), one villager per
+  shelter tile (`SHELTER_CAPACITY = 1`), per-night occupancy, proactive hut-building on shortage.
+- **Day length is balance-neutral** (per-tick health/rest/spoilage scaled to a 60-tick reference);
+  default `ticksPerDay = 600` so LLM dawn pauses interrupt rarely.
+- **Event log never wipes the narrative** (reflections/chronicles/notable events kept forever; only
+  chatter is bounded). Map: resource **icons** (🍎🌲🪨…), per-agent **action glyphs**, granary/shelter
+  drawing, **hover tooltip** for granary stock / shelter occupants / resource amounts.
+- **Playwright UI tests** (`npm run uicheck`) — real-browser layout/overflow checks + screenshots.
 
 ---
 
@@ -26,13 +41,21 @@ npm run build      # tsc --noEmit && vite build
 npm run smoke      # headless: engine 20 sim-days, asserts invariants (no LLM), prints a report
 npm run reflcheck  # headless: audits reflection CADENCE over 30 days (no LLM) — see §6a
 npm run llmcheck   # headless: drives ONE real reflection through Ollama (server must be up) — see §6a
+npm run uicheck    # Playwright: boots the app in real Chromium, asserts no clipping/overflow + screenshots
 ```
+
+`npm run uicheck` ([tests/ui.spec.ts](tests/ui.spec.ts), [playwright.config.ts](playwright.config.ts)) is the
+**visual** check jsdom can't do: it launches Chromium against the dev server (auto-started), asserts the page
+and config panel don't overflow horizontally (the "cut off" bug class), confirms the core regions render and
+the sim runs, and saves screenshots to `test-results/shots/*.png` so the rendered screen is inspectable. One-time
+setup if `node_modules` is fresh: `npx playwright install chromium`.
 
 **Always run `npm run typecheck` and `npm run smoke` after engine changes**, and `npm run reflcheck`
 after touching reflection scheduling. The smoke test ([scripts/smoke.ts](scripts/smoke.ts)) runs the
-deterministic engine for ~1200 ticks and fails if agents stop acting, needs/health go non-finite, no
-events log, or everyone dies. All checks are deterministic given the seed. The `.mjs` bundles land in
-`node_modules/.cache/` (gitignored).
+deterministic engine for ~20 sim-days and fails if agents stop acting, needs/health go non-finite, no
+events log, or everyone dies; it also reports shelters, granaries, stored food and a death-cause
+breakdown — read those when balancing. All checks are deterministic given the seed. The `.mjs` bundles
+land in `node_modules/.cache/` (gitignored).
 
 **Windows gotchas already resolved (don't re-debug):**
 - `npm not recognized` → Node is on PATH now; open a *new* terminal after any PATH change.
@@ -113,6 +136,8 @@ src/
     reproduction.ts           eligibility, pair checks, reproduce() with trait/skill inheritance
     groups.ts                 create/join/leave group, shared-group lookup
     dayNightCycle.ts          clock advance, isNight, lightLevel
+    seasons.ts                Seasonal boom/famine: season derived from world.day, regen multiplier
+                              (spring 1.3 -> winter 0.25); gated by config.seasonsEnabled
     tick.ts                   stepTick(): physics + dawn snapshot of reflections (returns prepared[])
     metrics.ts                computeMetrics(): pop, trust, violence, inequality, collapse, utopia
 
@@ -144,6 +169,8 @@ src/
 scripts/smoke.ts              Headless engine smoke test          (`npm run smoke`)
 scripts/reflcheck.ts          Headless reflection-cadence audit   (`npm run reflcheck`)
 scripts/llmcheck.ts           One real reflection via live Ollama (`npm run llmcheck`)
+tests/ui.spec.ts              Playwright UI checks (overflow + screenshots)  (`npm run uicheck`)
+playwright.config.ts          Playwright config (boots `npm run dev`, 1600×900 Chromium)
 ```
 
 Note: the original spec listed `agents/ruleBasedAgent.ts` — that role is fully covered by
@@ -223,15 +250,50 @@ Balance knobs that were deliberately set (all in `decisionEngine.ts` `scoreActio
   or lower how many sleep per hut, change `SHELTER_CAPACITY`. `scripts/smoke.ts` now reports
   finished/in-progress shelters and a death-cause breakdown.
 
-- **Day length:** `ticksPerDay` defaults to **150** (longer so a real local-LLM dawn pause interrupts
-  far less often). Tunable live via the Config tab "Day length" slider (12–480). It is now genuinely
+- **Day length:** `ticksPerDay` defaults to **600** (long so a real local-LLM dawn pause interrupts
+  far less often). Tunable live via the Config tab "Day length" slider (12–1200). It is genuinely
   **balance-neutral**: need-decay (`needs.ts` `decayNeeds`) is per-day, and the per-tick *health*
-  effects (`applyNeedHealthEffects`) plus the per-tick *rest/shelter* deltas (`doRest`) are scaled by
-  `60/ticksPerDay`, so a night of sleep and a day of starvation/exposure do the same thing at any day
-  length. (Before this, lengthening the day silently multiplied exposure damage and wiped the village.)
+  effects (`applyNeedHealthEffects`, scaled to a 60-tick reference) plus the per-tick *rest/shelter*
+  deltas (`doRest`, scaled by `60/ticksPerDay`) and the per-day food spoilage do the same thing at any
+  day length. (Before this scaling, lengthening the day silently multiplied exposure damage and wiped
+  the village — if you add a survival-relevant per-tick effect, scale it the same way.)
+- **Event-log retention.** The world log keeps the **full narrative forever** — reflections,
+  chronicles and notable (severity ≥ 2) events are never trimmed (`isNarrative` in `events.ts`), so
+  the "Minds"/"Summary"/"Drama" filters span day 1 → the last day. Only trivial chatter (greetings,
+  ordinary trades) is bounded (`MAX_CHATTER = 3000`). The EventLog re-renders on event-count change
+  (not every tick) and shows full history for filtered views; the noisy "All" view is capped at the
+  last 1500 lines just to bound the DOM. Daily chronicles are likewise uncapped (`daySummary.ts`).
+- **Food storage & spoilage (granaries).** Food now rots once per day (`tick.ts` `spoilFood`): food in
+  an agent's **pack spoils fast (18%/day)**, food in a **granary slowly (3%/day)** — the incentive to
+  store surplus. A `FoodStore` (granary) is a *communal* one-tile structure distinct from a sleeping
+  shelter: wood-only (`GRANARY_WOOD_COST = 6`), `GRANARY_CAPACITY = 150`, drawn as a tan barn with a
+  🌾 marker + fill bar. Two new actions (`store_food`/`get_food` in `decisionEngine.ts`): an agent
+  with pack food above `FOOD_KEEP` (10) deposits the surplus (building a granary if none is reachable
+  and it has wood), and a hungry agent with an empty pack draws from the nearest stocked granary.
+  Granary count is soft-capped at ≈ one per 3 villagers (`underGranaryCap`) so the map isn't littered
+  — the default seed settles to ~4 granaries. `scripts/smoke.ts` reports granary count + stored food.
 - **Build-spot seeking:** an agent carrying materials but standing on forest/rock (where it gathered)
   now walks to the nearest open grass via `findBuildSpot` instead of re-choosing `build_shelter` and
   spinning in place — without this, a strong build drive burns thousands of no-op build ticks.
+
+- **Food is the scarce, contested resource (2026-06 rebalance).** Originally food was so abundant the
+  hunger slider was meaningless and the only conflict was Orin's hoarding. Food is now deliberately
+  lean so the village competes for it (scarcity → hunger-theft → resentment → feuds → violence):
+  - `world.ts` `generateTiles`: fewer food patches (`0.05*(0.2+scarcity)`) and slower per-tile regen.
+  - `decisionEngine.ts` `autoConsume`: one food unit relieves **24** hunger (was 35) — agents must eat
+    (and therefore gather/store) far more often.
+  - `defaultConfig.ts` `hungerRate` default **20** (was 12); ConfigPanel slider max **120** (was 40)
+    so it actually bites. At default the seed is tense-but-survivable (~10–12 alive, some combat, no
+    starvation); at max it collapses into starvation + emergent murder.
+- **Seasons (boom & famine) — `simulation/seasons.ts`, `config.seasonsEnabled` (default on).** Renewable
+  regen swings through a 28-day year (4 × `SEASON_LENGTH_DAYS`=7): spring ×1.3, summer ×1.0, autumn
+  ×0.6, **winter ×0.25**. Season is derived purely from `world.day` (no stored state → nothing extra to
+  serialize, fully deterministic) and applied in `resources.ts` `regenerateResources`. Each season
+  start logs a heralding `system` event (severity 2, kept forever); the current season shows as a chip
+  in `SimulationControls` next to the day. This creates the intended store-surplus-for-winter survival
+  loop — granaries (slow 3%/day spoilage) are how a village banks autumn food against winter. "Abundant
+  Paradise" disables seasons (`presets.ts`) to stay frictionless. Smoke's default 20-day window ends as
+  the first winter begins (D21); bump `DAYS` locally to watch a full year.
 
 If you change scoring, re-run `npm run smoke` and watch: living count > 0 at day 20, some shelters
 built, some social events. The smoke report prints the action mix and notable events.
@@ -265,6 +327,17 @@ built, some social events. The smoke report prints the action mix and notable ev
    settings (+ test connection, thinking toggle), metrics panel
 ✅ 8 world presets; config persistence of LLM settings to localStorage
 ✅ Headless smoke + cadence (reflcheck) + live-LLM (llmcheck) checks; clean typecheck + build
+
+**Added after the MVP (see §5/§6 for detail):**
+✅ Daily **chronicle** narrator ("Summary" tab) — JSON-constrained so qwen3 reasoning doesn't leak
+✅ `store_food`/`get_food` actions + communal **granaries** with per-day **food spoilage** (pack fast,
+   store slow); granary count soft-capped; map drawing + hover tooltip
+✅ Sleep model (long night stretches, hysteresis) + **one villager per shelter tile**, per-night
+   occupancy, proactive hut-building on housing shortage
+✅ Day length **balance-neutral** + default `ticksPerDay = 600`; slider 12–1200
+✅ Event log keeps the **full narrative forever** (only chatter bounded); resource **icons** +
+   per-agent **action glyphs** + granary/shelter drawing + tile **hover tooltip**
+✅ **Playwright UI tests** (`npm run uicheck`) — real-browser overflow/layout checks + screenshots
 
 ---
 
@@ -307,6 +380,8 @@ built, some social events. The smoke report prints the action mix and notable ev
 5. `diseaseEnabled`, `weatherEnabled`, `disastersEnabled` exist in `SimulationConfig` + UI but have
    no implementation. Add systems in `simulation/` and call them from `stepTick`/`handleDawn`.
    "Catastrophes" (fire/drought/flood/disease/animal attack/stranger arrives) belong here.
+   (NOTE: **seasons** — `seasonsEnabled` — *are* implemented, see `simulation/seasons.ts` and §6;
+   `weatherEnabled` is the seam for finer-grained weather on top of the seasonal baseline.)
 
 ### D. Larger features from the original spec (design seams exist)
 6. **Laws & governance:** propose/support/oppose/break/enforce laws, punishment, exile. `Group` +
@@ -363,6 +438,7 @@ built, some social events. The smoke report prints the action mix and notable ev
 | Metrics / utopia·collapse score | `simulation/metrics.ts` |
 | LLM prompt | `llm/promptBuilder.ts` |
 | Daily chronicle / Summary tab | `llm/daySummary.ts`, `ui/DailyChroniclePanel.tsx` (`ChronicleFeed`), `ui/EventLog.tsx` |
+| Food storage / granaries / spoilage | `agents/decisionEngine.ts` (`doStoreFood`/`doGetFood`, `underGranaryCap`), `simulation/tick.ts` (`spoilFood`), `ui/WorldView.tsx` (`drawGranary`) |
 | LLM output schema/validation | `llm/schemas.ts`, `llm/reflection.ts` (`applyReflection`) |
 | Reflection scheduling | `llm/reflection.ts` (`selectAgentsForReflection`), `simulation/tick.ts` |
 | Game loop / config wiring | `state/store.ts` |
