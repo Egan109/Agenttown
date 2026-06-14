@@ -2,7 +2,7 @@ import type { Agent, Relationship } from "../types";
 import { clamp100, clampSigned } from "../util/math";
 
 export function defaultRelationship(): Relationship {
-  return { trust: 0, affection: 0, fear: 0, respect: 0, resentment: 0, attraction: 0 };
+  return { trust: 0, affection: 0, fear: 0, respect: 0, resentment: 0, attraction: 0, familiarity: 0 };
 }
 
 export function getRelationship(agent: Agent, otherId: string): Relationship {
@@ -23,6 +23,7 @@ export function applyRelationshipDelta(rel: Relationship, delta: RelationshipDel
   if (delta.respect != null) rel.respect = clamp100(rel.respect + delta.respect);
   if (delta.resentment != null) rel.resentment = clamp100(rel.resentment + delta.resentment);
   if (delta.attraction != null) rel.attraction = clamp100(rel.attraction + delta.attraction);
+  if (delta.familiarity != null) rel.familiarity = clamp100(rel.familiarity + delta.familiarity);
 }
 
 /**

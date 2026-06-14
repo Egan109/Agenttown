@@ -47,6 +47,10 @@ after UI changes `uicheck` (one-time `npx playwright install chromium` if node_m
 ## Conventions
 - Add agent behavior as: a scored candidate in `scoreActions`, an executor fn, and a `switch` case in
   `runAgentTick`. Keep scoring in terms of needs/priorities/traits so personality drives it.
+- **Dialogue/social lives in `simulation/social.ts`, not `doTalk`.** To add a conversational behavior:
+  add a `SocialIntent`, a `TEMPLATES` entry, a `scoreIntent` branch (needs/traits/relationship/topic +
+  eligibility), and a `performInteraction` effect. Variety is kept by the anti-repetition cooldowns —
+  don't bypass them. It must stay deterministic (no `Math.random`; choices are argmax over scores).
 - **Strict tsconfig** (`noUnusedLocals`/`noUnusedParameters`). With the `react-jsx` runtime, **do not
   `import React`** in `.tsx` unless you use `React.*` — import only the hooks you use.
 - **Day length must stay balance-neutral.** Per-DAY effects divide by `ticksPerDay` (`needs.ts`

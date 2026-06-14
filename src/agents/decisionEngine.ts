@@ -31,7 +31,7 @@ import { clamp100 } from "../util/math";
 import type { Rng } from "../util/rng";
 import { isNight } from "../simulation/dayNightCycle";
 import { resolveAttack } from "../simulation/conflict";
-import { sendMessage } from "../simulation/communication";
+import { chooseInteraction, performInteraction } from "../simulation/social";
 import { createGroup, joinGroup } from "../simulation/groups";
 import { logEvent, pushAgentEvent } from "../simulation/events";
 import { pairCanReproduce, reproduce } from "../simulation/reproduction";
@@ -940,23 +940,17 @@ function doClean(world: WorldState, agent: Agent): void {
 }
 
 function doTalk(world: WorldState, agent: Agent, p: Perception): void {
-  const target = p.socialTarget;
-  if (!target) return;
+  // Pick WHO to talk to and WHAT to say via the deterministic social system
+  // (intent + topic + anti-repetition cooldowns), not a fixed tone-from-relationship.
+  const choice = chooseInteraction(world, agent, p.nearby);
+  if (!choice) return;
+  const target = world.agents[choice.targetId];
+  if (!target || !target.alive) return;
   if (!adjacent(agent.position, target.position)) {
     moveStep(world, agent, target.position, true);
     return;
   }
-  const rel = getRelationship(agent, target.id);
-  // Choose a tone from the relationship.
-  if (rel.resentment > 55 && agent.traits.aggression > 55) {
-    sendMessage(world, agent, target, "threat");
-  } else if (rel.resentment > 40 && agent.traits.forgiveness > 55) {
-    sendMessage(world, agent, target, "apology");
-  } else if (rel.trust > 30 && agent.traits.cooperation > 55) {
-    sendMessage(world, agent, target, "proposal");
-  } else {
-    sendMessage(world, agent, target, "greeting");
-  }
+  performInteraction(world, agent, target, choice);
   agent.needs.social = clamp100(agent.needs.social - 30);
 }
 

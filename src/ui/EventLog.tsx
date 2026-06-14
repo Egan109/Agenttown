@@ -63,8 +63,8 @@ export function EventLog() {
         {filter !== SUMMARY_FILTER &&
           shown.map((e) => (
           <div key={e.id} style={{ padding: "3px 0", borderBottom: "1px solid #1b2027", fontSize: 12 }}>
-            <span className="mono dim" style={{ marginRight: 6 }}>
-              D{e.day}
+            <span className="mono dim" style={{ marginRight: 8 }}>
+              Day {e.day} ·
             </span>
             <span
               style={{

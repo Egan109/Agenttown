@@ -262,11 +262,12 @@ export type Memory = {
 /** Mechanical relationship numbers used by the rule engine (fast path). */
 export type Relationship = {
   trust: number; // -100..100
-  affection: number; // -100..100
+  affection: number; // -100..100 (a.k.a. "warmth" socially)
   fear: number; // 0..100
   respect: number; // 0..100
-  resentment: number; // 0..100
+  resentment: number; // 0..100 (a.k.a. "tension" socially)
   attraction: number; // 0..100
+  familiarity: number; // 0..100 — how well they know each other (grows with contact)
 };
 
 // ---------------------------------------------------------------------------
@@ -345,6 +346,9 @@ export type Agent = {
   /** Bookkeeping for reflection scheduling. */
   lastReflectionDay: number;
   pendingMajorEvent: boolean;
+
+  /** Recent-conversation memory for the deterministic social system (anti-repetition). */
+  social?: AgentSocialState;
 };
 
 // ---------------------------------------------------------------------------
@@ -369,9 +373,44 @@ export type Message = {
   fromAgentId: string;
   toAgentId: string;
   type: MessageType;
+  /** Finer-grained social intent (deterministic social system); optional so older
+   *  message producers (reproduction/group proposals) need not set it. */
+  intent?: SocialIntent;
   content: string;
   tick: number;
   day: number;
+};
+
+/** Deterministic conversational intents chosen by the social system (social.ts). */
+export type SocialIntent =
+  | "greet"
+  | "share_idea"
+  | "ask_for_help"
+  | "share_struggle"
+  | "compliment"
+  | "share_goal"
+  | "gossip_positive"
+  | "gossip_negative"
+  | "check_in"
+  | "apologize"
+  | "thank"
+  | "invite"
+  | "disagree"
+  | "reassure"
+  | "threat";
+
+/** One thing an agent said recently — drives anti-repetition cooldowns. */
+export type SocialAct = {
+  tick: number;
+  intent: SocialIntent;
+  targetId: string;
+  lineKey: string; // intent + topic + subject; a "template family"
+  line: string; // the exact rendered text
+};
+
+export type AgentSocialState = {
+  /** Most recent social acts by this agent, newest last (capped). */
+  recent: SocialAct[];
 };
 
 // ---------------------------------------------------------------------------

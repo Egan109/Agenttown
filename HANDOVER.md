@@ -130,7 +130,10 @@ src/
     pathfinding.ts            BFS over walkable grid (adjacentOk for water)
     resources.ts              gather yields, extractFromTile, daily regeneration
     events.ts                 World event log + per-agent daily feed (drives reflection)
-    communication.ts          Messages: compose + send + relationship/memory effects
+    communication.ts          Messages: compose + send + relationship/memory effects; recordMessage()
+    social.ts                 *** DETERMINISTIC SOCIAL SYSTEM *** intents/topics/templates +
+                              scored choice with anti-repetition cooldowns + gossip + reactive threads.
+                              doTalk delegates here (chooseInteraction -> performInteraction)
     conflict.ts               resolveAttack: combat power, damage, counterattack, loot, death
     lifecycle.ts              killAgent (the ONE death path) + grief ripple; noteBetrayal
     reproduction.ts           eligibility, pair checks, reproduce() with trait/skill inheritance
@@ -370,11 +373,22 @@ built, some social events. The smoke report prints the action mix and notable ev
    `propose_law`. Add scoring in `scoreActions` + an executor + a switch case in `runAgentTick`.
    `teach` is easiest (boost a nearby agent's skill, practice teaching). `propose_law` is the seam
    into governance (item D).
-4. **Unused `MessageType`s:** `gossip`, `request_resource`, `offer_trade`, `confession`,
-   `warning`, `reproduction_proposal`, `law_proposal`. `doTalk` only uses greeting/threat/apology/
-   proposal/alliance_offer. **Gossip** is the highest-value add (spec calls it out): agent A tells B
-   about C, shaded by honesty/manipulativeness, mutating B's opinion of C. Hook into
-   `communication.ts` + a `gossip` branch in `doTalk`.
+4. **DONE — deterministic social system (`simulation/social.ts`, 2026-06).** `doTalk` no longer maps a
+   stable relationship to one of four fixed lines (which flat-lined into the same utterance every tick).
+   It now runs `chooseInteraction` → `performInteraction`: a scored loop over 15 **intents** (greet,
+   share_idea/goal/struggle, ask_for_help, compliment, thank, reassure, invite, disagree, apologize,
+   check_in, gossip_positive/negative, threat) × nearby targets, with **topic selection** (goals /
+   struggles / world events / memories) and **anti-repetition cooldowns** (penalise the recently-used
+   intent, target, template-family, and a near-veto on the exact sentence). **Gossip is event/opinion-
+   based**: A tells B about a third party C, shifting B's opinion of C (positive → respect/trust up;
+   negative → trust down / tension up), distorted by A's honesty and B's trust in A — so gossip now
+   propagates distrust and can feed feuds. Short **threads** emerge via a reactive bonus (responding to a
+   fresh inbound line: compliment→thank, share_struggle→reassure, idea→disagree, etc.). The requested
+   trait set maps onto existing traits (kindness≈empathy+cooperation, gossip≈manipulativeness+low-honesty,
+   insecurity≈anxiety); `Relationship.familiarity` was added as the one new social dimension. Tuning lives
+   at the top of `social.ts` (cooldown windows) and in per-intent `score`/effect blocks. NOTE: negative
+   gossip raises the listener's resentment toward the subject — a deliberate social→conflict link; dial
+   the `gossip_negative` force in `performInteraction` if runs get too violent.
 
 ### C. Config toggles that currently do nothing (extension points already plumbed)
 5. `diseaseEnabled`, `weatherEnabled`, `disastersEnabled` exist in `SimulationConfig` + UI but have

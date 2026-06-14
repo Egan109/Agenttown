@@ -1,9 +1,62 @@
 import { addMemory, makeMemory } from "../agents/memory";
 import { applyInteraction, getRelationship } from "../agents/relationships";
-import type { Agent, Message, MessageType, WorldState } from "../types";
+import type { Agent, Message, MessageType, SocialIntent, WorldState } from "../types";
 import { logEvent } from "./events";
 
 const MAX_MESSAGES = 400;
+
+/** Map a fine-grained social intent onto the coarse Message.type union. */
+function intentToType(intent: SocialIntent): MessageType {
+  switch (intent) {
+    case "threat":
+      return "threat";
+    case "apologize":
+      return "apology";
+    case "gossip_positive":
+    case "gossip_negative":
+      return "gossip";
+    case "invite":
+      return "alliance_offer";
+    case "ask_for_help":
+      return "request_resource";
+    case "share_idea":
+    case "share_goal":
+    case "disagree":
+      return "proposal";
+    default:
+      return "greeting";
+  }
+}
+
+/**
+ * Record a finished social line (precomposed by social.ts): store the Message and
+ * log the event. Relationship/memory effects are applied by the caller, so this is
+ * purely the bookkeeping + log half.
+ */
+export function recordMessage(
+  world: WorldState,
+  from: Agent,
+  to: Agent,
+  intent: SocialIntent,
+  content: string,
+  severity: 0 | 1 | 2 = 0
+): Message {
+  const msg: Message = {
+    fromAgentId: from.id,
+    toAgentId: to.id,
+    type: intentToType(intent),
+    intent,
+    content,
+    tick: world.tick,
+    day: world.day,
+  };
+  world.messages.push(msg);
+  if (world.messages.length > MAX_MESSAGES) {
+    world.messages.splice(0, world.messages.length - MAX_MESSAGES);
+  }
+  logEvent(world, "message", content, [from.id, to.id], severity);
+  return msg;
+}
 
 /** Pick short, persona-flavored message text deterministically per type. */
 export function composeMessage(from: Agent, to: Agent, type: MessageType): string {
