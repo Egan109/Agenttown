@@ -38,9 +38,12 @@ export function recordMessage(
   from: Agent,
   to: Agent,
   intent: SocialIntent,
-  content: string,
+  line: string,
   severity: 0 | 1 | 2 = 0
 ): Message {
+  // social.ts hands us just the spoken words; attribute them to the speaker so the
+  // log reads like dialogue:  Vale: "Hello, Mara."
+  const content = `${from.name}: "${line}"`;
   const msg: Message = {
     fromAgentId: from.id,
     toAgentId: to.id,
